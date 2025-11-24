@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Scraper - Inbox Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-blue: #2563eb;
+            --primary-blue-dark: #1e40af;
+            --success-green: #059669;
+            --warning-orange: #ea580c;
+            --danger-red: #dc2626;
+            --neutral-gray: #6b7280;
+            --light-gray: #f3f4f6;
+            --border-gray: #e5e7eb;
+            --text-dark: #1f2937;
+            --text-light: #6b7280;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--primary-blue);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .privacy-notice {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 1rem;
+            margin: 1.5rem;
+            border-radius: 6px;
+        }
+
+        .privacy-notice h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            color: #92400e;
+        }
+
+        .privacy-notice ul {
+            margin-left: 1.5rem;
+            color: #78350f;
+            font-size: 0.9rem;
+        }
+
+        .content {
+            padding: 2rem;
+        }
+
+        /* Login Form */
+        .login-section {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text-dark);
+        }
+
+        input[type="email"],
+        input[type="password"],
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--border-gray);
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border 0.3s;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--primary-blue);
+        }
+
+        .helper-text {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            margin-top: 0.25rem;
+        }
+
+        button {
+            background: var(--primary-blue);
+            color: white;
+            border: none;
+            padding: 0.875rem 2rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+            width: 100%;
+        }
+
+        button:hover:not(:disabled) {
+            background: var(--primary-blue-dark);
+        }
+
+        button:disabled {
+            background: var(--neutral-gray);
+            cursor: not-allowed;
+        }
+
+        .analyzing {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .spinner {
+            border: 4px solid var(--light-gray);
+            border-top: 4px solid var(--primary-blue);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #fee2e2;
+            border-left: 4px solid var(--danger-red);
+            color: #991b1b;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+
+        /* Results Section */
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border-gray);
+        }
+
+        .results-summary {
+            font-size: 0.95rem;
+            color: var(--text-light);
+        }
+
+        .results-summary strong {
+            color: var(--text-dark);
+        }
+
+        .action-toolbar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: var(--light-gray);
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+
+        .action-button {
+            background: none;
+            border: none;
+            color: var(--text-dark);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background 0.2s;
+            width: auto;
+        }
+
+        .action-button:hover:not(:disabled) {
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Table */
+        .table-wrapper {
+            overflow-x: auto;
+            border: 1px solid var(--border-gray);
+            border-radius: 6px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        thead {
+            background: var(--light-gray);
+            position: sticky;
+            top: 0;
+        }
+
+        th {
+            padding: 0.875rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-dark);
+            border-bottom: 2px solid var(--border-gray);
+            white-space: nowrap;
+        }
+
+        th .tooltip {
+            display: inline-block;
+            margin-left: 0.25rem;
+            color: var(--text-light);
+            cursor: help;
+            font-size: 0.85rem;
+        }
+
+        td {
+            padding: 0.875rem 0.75rem;
+            border-bottom: 1px solid var(--border-gray);
+        }
+
+        tbody tr:hover {
+            background: #fafafa;
+        }
+
+        .checkbox-cell {
+            text-align: center;
+            width: 40px;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .badge-yes {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-no {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+
+        /* Payment Section */
+        .payment-section {
+            margin-top: 2rem;
+            padding: 2rem;
+            background: var(--light-gray);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .payment-section h2 {
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .payment-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+        }
+
+        .pay-button {
+            background: var(--success-green);
+            flex: 2;
+        }
+
+        .pay-button:hover:not(:disabled) {
+            background: #047857;
+        }
+
+        .skip-button {
+            background: var(--neutral-gray);
+            flex: 1;
+        }
+
+        .skip-button:hover:not(:disabled) {
+            background: #4b5563;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+        }
+
+        .close-button {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-light);
+            width: auto;
+            padding: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Sorting indicators */
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th.sortable:hover {
+            background: #e5e7eb;
+        }
+
+        .sort-indicator {
+            margin-left: 0.25rem;
+            font-size: 0.75rem;
+            opacity: 0.5;
+        }
+
+        th.sorted .sort-indicator {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📧 Email Scraper</h1>
+            <p>Privacy-first inbox analysis. Your data never leaves your device.</p>
+        </header>
+
+        <div class="privacy-notice">
+            <h3>🔒 Your Privacy Matters</h3>
+            <ul>
+                <li><strong>We only need:</strong> Your email address for download, and optional PayPal payment info</li>
+                <li><strong>Your credentials:</strong> Used once, in memory only, never stored</li>
+                <li><strong>Your emails:</strong> Analyzed locally on your device, never transmitted to our servers</li>
+                <li><strong>No data mining.</strong> No selling. No storage. Ever.</li>
+            </ul>
+        </div>
+
+        <div class="content">
+            <!-- Login Section -->
+            <div id="loginSection" class="login-section">
+                <div class="form-group">
+                    <label for="emailInput">Email Address</label>
+                    <input type="email" id="emailInput" placeholder="your.email@example.com" required>
+                    <div class="helper-text">Gmail and Outlook supported</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="passwordInput">Email Password</label>
+                    <input type="password" id="passwordInput" placeholder="Your email password" required>
+                    <div class="helper-text">Used only to read your emails. Never stored.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="daysInput">Analyze Period</label>
+                    <select id="daysInput">
+                        <option value="1" selected>Last 1 day</option>
+                        <option value="5">Last 5 days</option>
+                        <option value="7">Last 7 days</option>
+                    </select>
+                    <div class="helper-text">Analyzing more days may take longer</div>
+                </div>
+
+                <div id="errorMessage" class="error-message hidden"></div>
+
+                <button id="analyzeButton" onclick="startAnalysis()">
+                    🔍 Analyze My Inbox
+                </button>
+            </div>
+
+            <!-- Analyzing Section -->
+            <div id="analyzingSection" class="analyzing hidden">
+                <div class="spinner"></div>
+                <h3>Analyzing your inbox...</h3>
+                <p>This may take a moment. Please wait.</p>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="hidden">
+                <div class="results-header">
+                    <h2>📊 Analysis Results</h2>
+                    <div class="results-summary">
+                        <strong id="totalEmails">0</strong> emails from <strong id="totalSenders">0</strong> senders
+                        (<strong id="daysAnalyzed">1</strong> day period)
+                    </div>
+                </div>
+
+                <div class="action-toolbar">
+                    <button class="action-button" id="unsubscribeBtn" onclick="handleUnsubscribe()" disabled>
+                        🚫 Unsubscribe
+                    </button>
+                    <button class="action-button" id="createFolderBtn" onclick="handleCreateFolder()" disabled>
+                        📁 Create Folder
+                    </button>
+                    <button class="action-button" id="manageHistoryBtn" onclick="handleManageHistory()" disabled>
+                        🗃️ Manage History
+                    </button>
+                    <button class="action-button" id="deleteAllBtn" onclick="handleDeleteAll()" disabled>
+                        🗑️ Delete All
+                    </button>
+                    <button class="action-button" id="archiveBtn" onclick="handleArchive()" disabled>
+                        📦 Archive
+                    </button>
+                </div>
+
+                <div class="table-wrapper">
+                    <table id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th class="checkbox-cell">
+                                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                </th>
+                                <th class="sortable" onclick="sortTable('sender_name')">
+                                    Sender Name
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th class="sortable" onclick="sortTable('organization')">
+                                    Organization
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th class="sortable" onclick="sortTable('count')">
+                                    Count
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th class="sortable" onclick="sortTable('size')">
+                                    Size
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th class="sortable" onclick="sortTable('last_received')">
+                                    Last Received
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th class="sortable" onclick="sortTable('read_unread')">
+                                    Read/Unread
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th class="sortable" onclick="sortTable('unread_pct')">
+                                    % Unread
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th class="sortable" onclick="sortTable('nuisance')">
+                                    Nuisance
+                                    <span class="tooltip" title="Score based on unread%, count, and size">ℹ️</span>
+                                    <span class="sort-indicator">▼</span>
+                                </th>
+                                <th>
+                                    Unsubscribe?
+                                    <span class="tooltip" title="Unsubscribe link detected in email">ℹ️</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Payment Section -->
+                <div id="paymentSection" class="payment-section">
+                    <h2>💝 Found This Useful?</h2>
+                    <p>We've helped you analyze your inbox. If you found value, please consider an honor payment.</p>
+                    <p style="margin-top: 0.5rem; color: var(--text-light);">
+                        Your payment helps us continue building privacy-first tools.
+                    </p>
+                    <div class="payment-buttons">
+                        <button class="pay-button" onclick="showPaymentModal()">
+                            Pay for Service
+                        </button>
+                        <button class="skip-button" onclick="skipPayment()">
+                            Do Not Pay
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Modals -->
+    <div id="actionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Action</h2>
+                <button class="close-button" onclick="closeActionModal()">×</button>
+            </div>
+            <div id="modalBody">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let emailData = [];
+        let selectedSenders = new Set();
+        let currentSort = { column: 'sender_name', direction: 'asc' };
+
+        async function startAnalysis() {
+            const email = document.getElementById('emailInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+            const days = document.getElementById('daysInput').value;
+            const errorDiv = document.getElementById('errorMessage');
+
+            // Validation
+            if (!email || !password) {
+                errorDiv.textContent = 'Please enter both email and password';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            errorDiv.classList.add('hidden');
+
+            // Show analyzing screen
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('analyzingSection').classList.remove('hidden');
+            document.getElementById('analyzeButton').disabled = true;
+
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password, days })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Store results
+                emailData = data.senders;
+
+                // Display results
+                displayResults(data);
+
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+                document.getElementById('loginSection').classList.remove('hidden');
+                document.getElementById('analyzingSection').classList.add('hidden');
+                document.getElementById('analyzeButton').disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('analyzingSection').classList.add('hidden');
+            document.getElementById('resultsSection').classList.remove('hidden');
+
+            document.getElementById('totalEmails').textContent = data.total_emails;
+            document.getElementById('totalSenders').textContent = data.senders.length;
+            document.getElementById('daysAnalyzed').textContent = data.days_analyzed;
+
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+
+            emailData.forEach((sender, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="checkbox-cell">
+                        <input type="checkbox" class="sender-checkbox" 
+                               data-index="${index}" 
+                               onchange="updateSelection(${index})">
+                    </td>
+                    <td>${escapeHtml(sender.sender_name)}</td>
+                    <td>${escapeHtml(sender.organization)}</td>
+                    <td>${sender.count}</td>
+                    <td>${sender.size_display}</td>
+                    <td>${sender.last_received}</td>
+                    <td>${sender.read_count} / ${sender.unread_count}</td>
+                    <td>${sender.unread_pct}%</td>
+                    <td>${sender.nuisance}</td>
+                    <td>
+                        <span class="badge ${sender.has_unsubscribe ? 'badge-yes' : 'badge-no'}">
+                            ${sender.has_unsubscribe ? 'Yes' : 'No'}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateSelection(index) {
+            const checkbox = document.querySelector(`input[data-index="${index}"]`);
+            const senderEmail = emailData[index].sender_email;
+
+            if (checkbox.checked) {
+                selectedSenders.add(senderEmail);
+            } else {
+                selectedSenders.delete(senderEmail);
+            }
+
+            updateActionButtons();
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.sender-checkbox');
+
+            checkboxes.forEach((cb, index) => {
+                cb.checked = selectAll.checked;
+                const senderEmail = emailData[index].sender_email;
+                if (selectAll.checked) {
+                    selectedSenders.add(senderEmail);
+                } else {
+                    selectedSenders.delete(senderEmail);
+                }
+            });
+
+            updateActionButtons();
+        }
+
+        function updateActionButtons() {
+            const hasSelection = selectedSenders.size > 0;
+            document.getElementById('unsubscribeBtn').disabled = !hasSelection;
+            document.getElementById('createFolderBtn').disabled = !hasSelection;
+            document.getElementById('manageHistoryBtn').disabled = !hasSelection;
+            document.getElementById('deleteAllBtn').disabled = !hasSelection;
+            document.getElementById('archiveBtn').disabled = !hasSelection;
+        }
+
+        function sortTable(column) {
+            // Update sort direction
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+
+            // Sort data
+            emailData.sort((a, b) => {
+                let valA, valB;
+
+                switch(column) {
+                    case 'sender_name':
+                        valA = a.sender_name.toLowerCase();
+                        valB = b.sender_name.toLowerCase();
+                        break;
+                    case 'organization':
+                        valA = a.organization.toLowerCase();
+                        valB = b.organization.toLowerCase();
+                        break;
+                    case 'count':
+                        valA = a.count;
+                        valB = b.count;
+                        break;
+                    case 'size':
+                        valA = a.total_size;
+                        valB = b.total_size;
+                        break;
+                    case 'last_received':
+                        valA = new Date(a.last_received);
+                        valB = new Date(b.last_received);
+                        break;
+                    case 'unread_pct':
+                        valA = a.unread_pct;
+                        valB = b.unread_pct;
+                        break;
+                    case 'nuisance':
+                        valA = a.nuisance;
+                        valB = b.nuisance;
+                        break;
+                    default:
+                        return 0;
+                }
+
+                if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            // Update UI
+            document.querySelectorAll('th.sortable').forEach(th => {
+                th.classList.remove('sorted');
+                th.querySelector('.sort-indicator').textContent = '▼';
+            });
+
+            const sortedTh = Array.from(document.querySelectorAll('th.sortable')).find(
+                th => th.textContent.includes(column.replace('_', ' '))
+            );
+            if (sortedTh) {
+                sortedTh.classList.add('sorted');
+                sortedTh.querySelector('.sort-indicator').textContent = 
+                    currentSort.direction === 'asc' ? '▲' : '▼';
+            }
+
+            renderTable();
+        }
+
+        // Action handlers (Phase 2 implementations)
+        function handleUnsubscribe() {
+            showActionModal('Unsubscribe', 
+                `<p>Unsubscribe feature coming in Phase 2!</p>
+                 <p>Selected ${selectedSenders.size} sender(s).</p>`);
+        }
+
+        function handleCreateFolder() {
+            showActionModal('Create Folder',
+                `<p>Create Folder feature coming in Phase 2!</p>
+                 <p>Selected ${selectedSenders.size} sender(s).</p>`);
+        }
+
+        function handleManageHistory() {
+            showActionModal('Manage History',
+                `<p>Manage History feature coming in Phase 2!</p>
+                 <p>Selected ${selectedSenders.size} sender(s).</p>`);
+        }
+
+        function handleDeleteAll() {
+            showActionModal('Delete All',
+                `<p>Delete All feature coming in Phase 2!</p>
+                 <p>Selected ${selectedSenders.size} sender(s).</p>`);
+        }
+
+        function handleArchive() {
+            showActionModal('Archive',
+                `<p>Archive feature coming in Phase 2!</p>
+                 <p>Selected ${selectedSenders.size} sender(s).</p>`);
+        }
+
+        function showActionModal(title, content) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalBody').innerHTML = content;
+            document.getElementById('actionModal').classList.add('active');
+        }
+
+        function closeActionModal() {
+            document.getElementById('actionModal').classList.remove('active');
+        }
+
+        function showPaymentModal() {
+            alert('PayPal integration coming soon! For now, this is a free preview.');
+        }
+
+        function skipPayment() {
+            alert('Thank you for trying Email Scraper! We hope you found it useful.');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Enter key handling
+        document.getElementById('emailInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('passwordInput').focus();
+        });
+
+        document.getElementById('passwordInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startAnalysis();
+        });
+    </script>
+</body>
+</html>
