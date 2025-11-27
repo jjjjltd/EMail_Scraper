@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results - Email Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-blue: #2563eb;
+            --primary-blue-dark: #1e40af;
+            --success-green: #059669;
+            --warning-orange: #ea580c;
+            --danger-red: #dc2626;
+            --neutral-gray: #6b7280;
+            --light-gray: #f3f4f6;
+            --border-gray: #e5e7eb;
+            --text-dark: #1f2937;
+            --text-light: #6b7280;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--primary-blue);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 2rem;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border-gray);
+        }
+
+        .results-summary {
+            font-size: 0.95rem;
+            color: var(--text-light);
+        }
+
+        .results-summary strong {
+            color: var(--text-dark);
+        }
+
+        .warning-box {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+            color: #78350f;
+        }
+
+        .test-mode-badge {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        .action-toolbar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: var(--light-gray);
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+
+        .action-button {
+            background: none;
+            border: none;
+            color: var(--text-dark);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background 0.2s;
+            width: auto;
+        }
+
+        .action-button:hover:not(:disabled) {
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            border: 1px solid var(--border-gray);
+            border-radius: 6px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        thead {
+            background: var(--light-gray);
+            position: sticky;
+            top: 0;
+        }
+
+        th {
+            padding: 0.875rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-dark);
+            border-bottom: 2px solid var(--border-gray);
+            white-space: nowrap;
+        }
+
+        th .tooltip {
+            display: inline-block;
+            margin-left: 0.25rem;
+            color: var(--text-light);
+            cursor: help;
+            font-size: 0.85rem;
+        }
+
+        td {
+            padding: 0.875rem 0.75rem;
+            border-bottom: 1px solid var(--border-gray);
+        }
+
+        tbody tr:hover {
+            background: #fafafa;
+        }
+
+        .checkbox-cell {
+            text-align: center;
+            width: 40px;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .badge-yes {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-no {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+
+        .payment-section {
+            margin-top: 2rem;
+            padding: 2rem;
+            background: var(--light-gray);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .payment-section h2 {
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .payment-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+        }
+
+        .pay-button {
+            background: var(--success-green);
+            flex: 2;
+            color: white;
+            padding: 0.875rem 2rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .pay-button:hover:not(:disabled) {
+            background: #047857;
+        }
+
+        .skip-button {
+            background: var(--neutral-gray);
+            flex: 1;
+            color: white;
+            padding: 0.875rem 2rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .skip-button:hover:not(:disabled) {
+            background: #4b5563;
+        }
+
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th.sortable:hover {
+            background: #e5e7eb;
+        }
+
+        .sort-indicator {
+            margin-left: 0.25rem;
+            font-size: 0.75rem;
+            opacity: 0.5;
+        }
+
+        th.sorted .sort-indicator {
+            opacity: 1;
+        }
+
+        .new-analysis-button {
+            background: var(--primary-blue);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 1rem;
+        }
+
+        .new-analysis-button:hover {
+            background: var(--primary-blue-dark);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📧 Email Scraper</h1>
+            <p>Analysis Results</p>
+        </header>
+
+        <div class="content">
+            {% if test_mode %}
+            <div class="test-mode-badge">
+                ⚠️ TEST MODE: Read-only analysis
+            </div>
+            {% endif %}
+
+            {% if warning %}
+            <div class="warning-box">
+                ⚠️ {{ warning }}
+            </div>
+            {% endif %}
+
+            <div class="results-header">
+                <h2>📊 Analysis Results</h2>
+                <div class="results-summary">
+                    <strong>{{ total_emails }}</strong> emails from <strong>{{ total_senders }}</strong> senders
+                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed > 1 %}s{% endif %} period)
+                </div>
+            </div>
+
+            <div class="action-toolbar">
+                <button class="action-button" id="unsubscribeBtn" onclick="handleUnsubscribe()" disabled>
+                    🚫 Unsubscribe
+                </button>
+                <button class="action-button" id="createFolderBtn" onclick="handleCreateFolder()" disabled>
+                    📁 Create Folder
+                </button>
+                <button class="action-button" id="manageHistoryBtn" onclick="handleManageHistory()" disabled>
+                    🗃️ Manage History
+                </button>
+                <button class="action-button" id="deleteAllBtn" onclick="handleDeleteAll()" disabled>
+                    🗑️ Delete All
+                </button>
+                <button class="action-button" id="archiveBtn" onclick="handleArchive()" disabled>
+                    📦 Archive
+                </button>
+            </div>
+
+            <div class="table-wrapper">
+                <table id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-cell">
+                                <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                            </th>
+                            <th class="sortable" onclick="sortTable('sender_name')">
+                                Sender Name
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th class="sortable" onclick="sortTable('organization')">
+                                Organization
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th class="sortable" onclick="sortTable('count')">
+                                Count
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th class="sortable" onclick="sortTable('size')">
+                                Size
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th class="sortable" onclick="sortTable('last_received')">
+                                Last Received
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th class="sortable" onclick="sortTable('read_unread')">
+                                Read/Unread
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th class="sortable" onclick="sortTable('unread_pct')">
+                                % Unread
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th class="sortable" onclick="sortTable('nuisance')">
+                                Nuisance
+                                <span class="tooltip" title="Score based on unread%, count, and size">ℹ️</span>
+                                <span class="sort-indicator">▼</span>
+                            </th>
+                            <th>
+                                Unsubscribe?
+                                <span class="tooltip" title="Unsubscribe link detected in email">ℹ️</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                        {% for sender in senders %}
+                        <tr>
+                            <td class="checkbox-cell">
+                                <input type="checkbox" class="sender-checkbox" 
+                                       data-email="{{ sender.sender_email }}" 
+                                       onchange="updateSelection()">
+                            </td>
+                            <td>{{ sender.sender_name }}</td>
+                            <td>{{ sender.organization }}</td>
+                            <td>{{ sender.count }}</td>
+                            <td>{{ sender.size_display }}</td>
+                            <td>{{ sender.last_received }}</td>
+                            <td>{{ sender.read_count }} / {{ sender.unread_count }}</td>
+                            <td>{{ sender.unread_pct }}%</td>
+                            <td>{{ sender.nuisance }}</td>
+                            <td>
+                                <span class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
+                                    {% if sender.has_unsubscribe %}Yes{% else %}No{% endif %}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="/" class="new-analysis-button">🔄 New Analysis</a>
+            </div>
+
+            <div class="payment-section">
+                <h2>💝 Found This Useful?</h2>
+                <p>We've helped you analyze your inbox. If you found value, please consider an honor payment.</p>
+                <p style="margin-top: 0.5rem; color: var(--text-light);">
+                    Your payment helps us continue building privacy-first tools.
+                </p>
+                <div class="payment-buttons">
+                    <button class="pay-button" onclick="showPaymentModal()">
+                        Pay for Service
+                    </button>
+                    <button class="skip-button" onclick="skipPayment()">
+                        Do Not Pay
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedSenders = new Set();
+
+        function updateSelection() {
+            const checkboxes = document.querySelectorAll('.sender-checkbox:checked');
+            selectedSenders.clear();
+            checkboxes.forEach(cb => selectedSenders.add(cb.dataset.email));
+            updateActionButtons();
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.sender-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateSelection();
+        }
+
+        function updateActionButtons() {
+            const hasSelection = selectedSenders.size > 0;
+            document.getElementById('unsubscribeBtn').disabled = !hasSelection;
+            document.getElementById('createFolderBtn').disabled = !hasSelection;
+            document.getElementById('manageHistoryBtn').disabled = !hasSelection;
+            document.getElementById('deleteAllBtn').disabled = !hasSelection;
+            document.getElementById('archiveBtn').disabled = !hasSelection;
+        }
+
+        function handleUnsubscribe() {
+            alert(`Unsubscribe feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+        }
+
+        function handleCreateFolder() {
+            alert(`Create Folder feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+        }
+
+        function handleManageHistory() {
+            alert(`Manage History feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+        }
+
+        function handleDeleteAll() {
+            alert(`Delete All feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+        }
+
+        function handleArchive() {
+            alert(`Archive feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+        }
+
+        function showPaymentModal() {
+            alert('PayPal integration coming soon! For now, this is a free preview.');
+        }
+
+        function skipPayment() {
+            alert('Thank you for trying Email Scraper! We hope you found it useful.');
+        }
+
+        function sortTable(column) {
+            // Sorting functionality to be implemented
+            console.log('Sort by:', column);
+        }
+    </script>
+</body>
+</html>
