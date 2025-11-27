@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyzing... - Email Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .analyzing-container {
+            background: white;
+            border-radius: 12px;
+            padding: 3rem 2rem;
+            text-align: center;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #2563eb;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 2rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        h2 {
+            color: #1f2937;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .email-info {
+            color: #6b7280;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }
+
+        .progress-text {
+            color: #2563eb;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .helper-text {
+            color: #6b7280;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            border-left: 4px solid #dc2626;
+            color: #991b1b;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-top: 1.5rem;
+            text-align: left;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .button {
+            margin-top: 1rem;
+            padding: 0.75rem 1.5rem;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="analyzing-container">
+        <div class="spinner" id="spinner"></div>
+        <h2 id="title">Analyzing your inbox...</h2>
+        <div class="email-info">
+            <strong>{{ email }}</strong><br>
+            Last {{ days }} day{% if days > 1 %}s{% endif %}
+        </div>
+        <div class="progress-text" id="progressText">Connecting to email server...</div>
+        <div class="helper-text" id="helperText">
+            This may take a moment. Please wait.
+            {% if days == 1 %}
+            <br>Usually takes 10-30 seconds
+            {% else %}
+            <br>May take 1-2 minutes for larger inboxes
+            {% endif %}
+        </div>
+        <div id="errorMessage" class="error-message hidden"></div>
+        <a href="/" class="button hidden" id="retryButton">Try Again</a>
+    </div>
+
+    <script>
+        // Auto-redirect to API endpoint which will render results
+        window.onload = function() {
+            const progressText = document.getElementById('progressText');
+            progressText.textContent = 'Analyzing emails...';
+            
+            // Redirect to API analysis endpoint
+            setTimeout(() => {
+                window.location.href = '/results';
+            }, 1000);
+        };
+    </script>
+</body>
+</html>

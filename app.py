@@ -2,9 +2,10 @@
 """
 Email Scraper - HERD-principled inbox analysis tool
 Privacy-first, value-first, honor-based payment
+OAuth 2.0 implementation for frictionless authentication
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 import imaplib
 import email
 from email.header import decode_header
@@ -13,22 +14,50 @@ from collections import defaultdict
 import re
 import webbrowser
 from threading import Timer
+import os
+from dotenv import load_dotenv
+from authlib.integrations.flask_client import OAuth
+import base64
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# IMAP server configurations
-IMAP_SERVERS = {
-    'gmail.com': 'imap.gmail.com',
-    'outlook.com': 'imap-mail.outlook.com',
-    'hotmail.com': 'imap-mail.outlook.com',
-    'hotmail.co.uk': 'imap-mail.outlook.com',
-    'live.com': 'imap-mail.outlook.com'
-}
+# Test mode flag
+TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
 
-def get_imap_server(email_address):
-    """Determine IMAP server from email address"""
-    domain = email_address.split('@')[1].lower()
-    return IMAP_SERVERS.get(domain, f'imap.{domain}')
+# Resource limits
+MAX_EMAILS = int(os.getenv('MAX_EMAILS', '5000'))
+MAX_TIME_SECONDS = int(os.getenv('MAX_TIME_SECONDS', '300'))
+
+# Initialize OAuth
+oauth = OAuth(app)
+
+# Google OAuth configuration
+google = oauth.register(
+    name='google',
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={
+        'scope': 'openid email profile https://www.google.com/',
+        'access_type': 'offline',
+        'prompt': 'consent'
+    }
+)
+
+# Microsoft OAuth configuration  
+microsoft = oauth.register(
+    name='microsoft',
+    client_id=os.getenv('MICROSOFT_CLIENT_ID'),
+    client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
+    server_metadata_url=f'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration',
+    client_kwargs={
+        'scope': 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read'
+    }
+)
 
 def decode_mime_words(s):
     """Decode MIME encoded email headers"""
@@ -97,23 +126,46 @@ def check_unsubscribe(email_msg):
             body = email_msg.get_payload(decode=True)
             if body:
                 body_str = body.decode('utf-8', errors='ignore')
-                if re.search(r'unsubscribe', body, re.IGNORECASE):
+                if re.search(r'unsubscribe', body_str, re.IGNORECASE):
                     return True
     except:
         pass
     
     return False
 
-def analyze_emails(email_address, password, days=1):
-    """Connect to IMAP and analyze emails"""
+def generate_oauth_string(user, access_token):
+    """Generate OAuth2 string for IMAP authentication"""
+    auth_string = f'user={user}\x01auth=Bearer {access_token}\x01\x01'
+    return auth_string
+
+def analyze_emails_oauth(email_address, access_token, provider, days=1):
+    """Connect to IMAP using OAuth and analyze emails"""
     
     try:
+        # Determine IMAP server
+        if provider == 'google':
+            imap_server = 'imap.gmail.com'
+        elif provider == 'microsoft':
+            imap_server = 'outlook.office365.com'
+        else:
+            return {'error': 'Unknown provider'}
+        
         # Connect to IMAP server
-        imap_server = get_imap_server(email_address)
         mail = imaplib.IMAP4_SSL(imap_server)
         
-        # Login
-        mail.login(email_address, password)
+        # Authenticate with OAuth - different methods for different providers
+        if provider == 'google':
+            # Gmail uses XOAUTH2 with base64 encoded string
+            auth_string = generate_oauth_string(email_address, access_token)
+            auth_bytes = auth_string.encode('utf-8')
+            auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
+            mail.authenticate('XOAUTH2', lambda x: auth_b64)
+        elif provider == 'microsoft':
+            # Outlook also uses XOAUTH2 but may need different encoding
+            auth_string = generate_oauth_string(email_address, access_token)
+            auth_bytes = auth_string.encode('utf-8')
+            auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
+            mail.authenticate('XOAUTH2', lambda x: auth_b64)
         
         # Select inbox
         mail.select('INBOX')
@@ -128,6 +180,14 @@ def analyze_emails(email_address, password, days=1):
             return {'error': 'Failed to search emails'}
         
         email_ids = messages[0].split()
+        total_emails = len(email_ids)
+        
+        # Apply limit
+        if total_emails > MAX_EMAILS:
+            email_ids = email_ids[-MAX_EMAILS:]  # Get most recent
+            limited = True
+        else:
+            limited = False
         
         # Track senders
         sender_data = defaultdict(lambda: {
@@ -142,10 +202,14 @@ def analyze_emails(email_address, password, days=1):
             'has_unsubscribe': False
         })
         
-        total_emails = len(email_ids)
-        
         # Process emails
+        start_time = datetime.now()
+        
         for idx, email_id in enumerate(email_ids):
+            # Check timeout
+            if (datetime.now() - start_time).seconds > MAX_TIME_SECONDS:
+                break
+                
             try:
                 # Fetch email
                 status, msg_data = mail.fetch(email_id, '(RFC822 FLAGS)')
@@ -235,15 +299,21 @@ def analyze_emails(email_address, password, days=1):
         # Sort by sender name (default)
         results.sort(key=lambda x: x['sender_name'].lower())
         
-        return {
+        response = {
             'success': True,
             'total_emails': total_emails,
             'senders': results,
-            'days_analyzed': days
+            'days_analyzed': days,
+            'test_mode': TEST_MODE
         }
         
+        if limited:
+            response['warning'] = f'Inbox has {total_emails} emails. Analyzed most recent {MAX_EMAILS}. Try shorter date range for complete analysis.'
+        
+        return response
+        
     except imaplib.IMAP4.error as e:
-        return {'error': f'IMAP error: {str(e)}. Check your email and password.'}
+        return {'error': f'IMAP error: {str(e)}'}
     except Exception as e:
         return {'error': f'Connection error: {str(e)}'}
 
@@ -252,24 +322,110 @@ def index():
     """Serve main page"""
     return render_template('index.html')
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    """Analyze emails endpoint"""
-    data = request.get_json()
+@app.route('/login/<provider>')
+def login(provider):
+    """Initiate OAuth flow for provider"""
+    # Store days selection in session
+    days = request.args.get('days', '1')
+    session['days'] = days
     
-    email_address = data.get('email')
-    password = data.get('password')
-    days = int(data.get('days', 1))
+    if provider == 'google':
+        redirect_uri = url_for('google_callback', _external=True)
+        return google.authorize_redirect(redirect_uri)
+    elif provider == 'microsoft':
+        redirect_uri = 'http://localhost:5000/oauth/microsoft/callback'
+        print(f"DEBUG: Microsoft redirect_uri = {redirect_uri}") 
+        return microsoft.authorize_redirect(redirect_uri)
+    else:
+        return jsonify({'error': 'Unknown provider'}), 400
+
+@app.route('/oauth/google/callback')
+def google_callback():
+    """Handle Google OAuth callback"""
+    try:
+        token = google.authorize_access_token()
+        user_info = google.get('https://www.googleapis.com/oauth2/v3/userinfo').json()
+        
+        email_address = user_info.get('email')
+        access_token = token.get('access_token')
+        days = int(session.get('days', 1))
+        
+        # Store in session for analysis
+        session['email'] = email_address
+        session['access_token'] = access_token
+        session['provider'] = 'google'
+        session['days'] = days
+        
+        # Redirect to loading page that will trigger analysis
+        return render_template('analyzing.html', email=email_address, days=days)
+        
+    except Exception as e:
+        return render_template('error.html', error=f'Authentication failed: {str(e)}')
+
+@app.route('/oauth/microsoft/callback')
+def microsoft_callback():
+    """Handle Microsoft OAuth callback"""
+    try:
+        token = microsoft.authorize_access_token()
+        user_info = microsoft.get('https://graph.microsoft.com/v1.0/me').json()
+        
+        email_address = user_info.get('mail') or user_info.get('userPrincipalName')
+        access_token = token.get('access_token')
+        days = int(session.get('days', 1))
+        
+        # Store in session for analysis
+        session['email'] = email_address
+        session['access_token'] = access_token
+        session['provider'] = 'microsoft'
+        session['days'] = days
+        
+        # Redirect to loading page that will trigger analysis
+        return render_template('analyzing.html', email=email_address, days=days)
+        
+    except Exception as e:
+        return render_template('error.html', error=f'Authentication failed: {str(e)}')
+
+@app.route('/api/analyze')
+def api_analyze():
+    """API endpoint to perform analysis"""
+    email_address = session.get('email')
+    access_token = session.get('access_token')
+    provider = session.get('provider')
+    days = int(session.get('days', 1))
     
-    if not email_address or not password:
-        return jsonify({'error': 'Email and password required'})
+    if not email_address or not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
     
-    # Validate days (1-7 max)
-    if days < 1 or days > 7:
-        days = 1
+    # Analyze emails
+    result = analyze_emails_oauth(email_address, access_token, provider, days)
     
-    result = analyze_emails(email_address, password, days)
     return jsonify(result)
+
+@app.route('/results')
+def results():
+    """Display analysis results"""
+    email_address = session.get('email')
+    access_token = session.get('access_token')
+    provider = session.get('provider')
+    days = int(session.get('days', 1))
+    
+    if not email_address or not access_token:
+        return redirect(url_for('index'))
+    
+    # Perform analysis
+    result = analyze_emails_oauth(email_address, access_token, provider, days)
+    
+    if result.get('error'):
+        return render_template('error.html', error=result['error'])
+    
+    # Render results using the results template
+    return render_template('results.html', 
+                         total_emails=result['total_emails'],
+                         total_senders=len(result['senders']),
+                         days_analyzed=result['days_analyzed'],
+                         senders=result['senders'],
+                         warning=result.get('warning'),
+                         test_mode=result.get('test_mode', False))
 
 def open_browser():
     """Open browser after short delay"""
@@ -281,7 +437,9 @@ if __name__ == '__main__':
     
     # Run Flask app
     print("🔍 Email Scraper starting...")
-    print("📧 Privacy-first inbox analysis")
+    print("📧 Privacy-first inbox analysis with OAuth")
     print("🌐 Opening browser at http://127.0.0.1:5000")
+    if TEST_MODE:
+        print("⚠️  TEST MODE: Read-only analysis")
     
     app.run(debug=False, host='127.0.0.1', port=5000)
