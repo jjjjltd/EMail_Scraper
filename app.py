@@ -6,6 +6,7 @@ OAuth 2.0 implementation for frictionless authentication
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+# from flask_session import Session
 import imaplib
 import email
 from email.header import decode_header
@@ -21,12 +22,16 @@ import base64
 
 # Load environment variables
 load_dotenv()
-
+print(f"DEBUG: FLASK_SECRET_KEY loaded: {os.getenv('FLASK_SECRET_KEY')[:10]}...")
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False  # True only for HTTPS in production
+app.config['SESSION_TYPE'] = 'null'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600
+
+# Session(app)
 
 # Test mode flag
 TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
@@ -329,6 +334,7 @@ def index():
 def login(provider):
     """Initiate OAuth flow for provider"""
     # Store days selection in session
+    session.permanent = True
     days = request.args.get('days', '1')
     session['days'] = days
     
@@ -336,9 +342,27 @@ def login(provider):
         redirect_uri = url_for('google_callback', _external=True)
         return google.authorize_redirect(redirect_uri)
     elif provider == 'microsoft':
-        redirect_uri = 'http://localhost:5000/oauth/microsoft/callback'
-        print(f"DEBUG: Microsoft redirect_uri = {redirect_uri}") 
-        return microsoft.authorize_redirect(redirect_uri)
+        import secrets
+        state = secrets.token_urlsafe(32)
+        
+        # Store state in memory (not session)
+        if not hasattr(app, 'oauth_states'):
+            app.oauth_states = {}
+        app.oauth_states[state] = {'created': datetime.now()}
+        
+        # Build OAuth URL manually
+        auth_url = (
+            f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"
+            f"client_id={os.getenv('MICROSOFT_CLIENT_ID')}"
+            f"&response_type=code"
+            f"&redirect_uri=http://localhost:5000/oauth/microsoft/callback"
+            f"&scope=openid+email+profile+offline_access+https://outlook.office.com/IMAP.AccessAsUser.All+https://outlook.office.com/Mail.Read"
+            f"&state={state}"
+        )
+        
+        print(f"DEBUG: Generated state: {state}")
+        return redirect(auth_url)
+
     else:
         return jsonify({'error': 'Unknown provider'}), 400
 
@@ -368,12 +392,49 @@ def google_callback():
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
     """Handle Microsoft OAuth callback"""
+    print(f"DEBUG: Callback received")
+    print(f"DEBUG: Request args: {request.args}")
+    
+    code = request.args.get('code')
+    state = request.args.get('state')
+    
+    # Verify state from memory
+    if not hasattr(app, 'oauth_states') or state not in app.oauth_states:
+        return render_template('error.html', error='Invalid state - please try again')
+    
+    # Clean up state
+    del app.oauth_states[state]
+    
+    print(f"DEBUG: State verified: {state}")
+    print(f"DEBUG: Code received: {code[:20]}...")
+    
     try:
-        token = microsoft.authorize_access_token()
-        user_info = microsoft.get('https://graph.microsoft.com/v1.0/me').json()
+        # Exchange code for token manually
+        import requests
+        token_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
+        token_data = {
+            'client_id': os.getenv('MICROSOFT_CLIENT_ID'),
+            'client_secret': os.getenv('MICROSOFT_CLIENT_SECRET'),
+            'code': code,
+            'redirect_uri': 'http://localhost:5000/oauth/microsoft/callback',
+            'grant_type': 'authorization_code'
+        }
+        
+        token_response = requests.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        token = token_response.json()
+        
+        print(f"DEBUG: Token received")
+        
+        # Get user info
+        access_token = token['access_token']
+        user_response = requests.get(
+            'https://graph.microsoft.com/v1.0/me',
+            headers={'Authorization': f'Bearer {access_token}'}
+        )
+        user_info = user_response.json()
         
         email_address = user_info.get('mail') or user_info.get('userPrincipalName')
-        access_token = token.get('access_token')
         days = int(session.get('days', 1))
         
         # Store in session for analysis
@@ -381,12 +442,14 @@ def microsoft_callback():
         session['access_token'] = access_token
         session['provider'] = 'microsoft'
         session['days'] = days
+        session.modified = True
         
-        # Redirect to loading page that will trigger analysis
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
+        print(f"DEBUG: Token exchange failed: {e}")
         return render_template('error.html', error=f'Authentication failed: {str(e)}')
+
 
 @app.route('/api/analyze')
 def api_analyze():
@@ -407,6 +470,7 @@ def api_analyze():
 @app.route('/results')
 def results():
     """Display analysis results"""
+    print(f"DEBUG: /results session: {session}")
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
