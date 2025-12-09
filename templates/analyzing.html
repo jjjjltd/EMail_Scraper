@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -41,8 +42,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         h2 {
@@ -96,13 +102,18 @@
         }
     </style>
 </head>
+
 <body>
     <div class="analyzing-container">
         <div class="spinner" id="spinner"></div>
         <h2 id="title">Analyzing your inbox...</h2>
         <div class="email-info">
             <strong>{{ email }}</strong><br>
-            Last {{ days }} day{% if days > 1 %}s{% endif %}
+            {% if days == 'first' %}
+            First day ever
+            {% else %}
+            Last {{ days }} day{% if days|int > 1 %}s{% endif %}
+            {% endif %}
         </div>
         <div class="progress-text" id="progressText">Connecting to email server...</div>
         <div class="helper-text" id="helperText">
@@ -119,15 +130,19 @@
 
     <script>
         // Auto-redirect to API endpoint which will render results
-        window.onload = function() {
+        window.onload = function () {
+            console.log('DEBUG: analyzing.html loaded');
             const progressText = document.getElementById('progressText');
             progressText.textContent = 'Analyzing emails...';
-            
+
+            console.log('DEBUG: Setting timeout for redirect');
             // Redirect to API analysis endpoint
             setTimeout(() => {
+                console.log('DEBUG: Redirecting to /results');
                 window.location.href = '/results';
             }, 1000);
         };
     </script>
 </body>
+
 </html>
