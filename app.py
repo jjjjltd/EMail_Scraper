@@ -154,26 +154,29 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
         if provider == 'google':
             imap_server = 'imap.gmail.com'
         elif provider == 'microsoft':
-            imap_server = 'outlook.office365.com'
+            imap_server = 'imap-mail.outlook.com'
         else:
             return {'error': 'Unknown provider'}
         
         # Connect to IMAP server
         mail = imaplib.IMAP4_SSL(imap_server)
+        mail.debug = 4
         
         # Authenticate with OAuth - different methods for different providers
         if provider == 'google':
             # Gmail uses XOAUTH2 with base64 encoded string
-            auth_string = generate_oauth_string(email_address, access_token)
-            auth_bytes = auth_string.encode('utf-8')
-            auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
+            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+            auth_b64 = base64.b64encode(auth_string.encode('ascii')).decode('ascii')
             mail.authenticate('XOAUTH2', lambda x: auth_b64)
         elif provider == 'microsoft':
-            # Outlook also uses XOAUTH2 but may need different encoding
-            auth_string = generate_oauth_string(email_address, access_token)
-            auth_bytes = auth_string.encode('utf-8')
-            auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
-            mail.authenticate('XOAUTH2', lambda x: auth_b64)
+            # Microsoft IMAP XOAUTH2 format - send as raw bytes, not base64-wrapped
+            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+            
+            # Important: Don't pre-encode to base64, let imaplib handle it
+            def get_auth(challenge):
+                return auth_string.encode('utf-8')
+            
+            mail.authenticate('XOAUTH2', get_auth)
         
         # Select inbox
         mail.select('INBOX')
@@ -321,10 +324,16 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
         return response
         
     except imaplib.IMAP4.error as e:
+        import traceback
+        print(f"DEBUG: IMAP error details: {e}")
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
         return {'error': f'IMAP error: {str(e)}'}
     except Exception as e:
+        import traceback
+        print(f"DEBUG: Connection error details: {e}")
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
         return {'error': f'Connection error: {str(e)}'}
-
+    
 @app.route('/')
 def index():
     """Serve main page"""
@@ -409,8 +418,10 @@ def microsoft_callback():
     print(f"DEBUG: Code received: {code[:20]}...")
     
     try:
-        # Exchange code for token manually
+    # Exchange code for token manually
         import requests
+        import jwt
+        
         token_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
         token_data = {
             'client_id': os.getenv('MICROSOFT_CLIENT_ID'),
@@ -424,17 +435,26 @@ def microsoft_callback():
         token_response.raise_for_status()
         token = token_response.json()
         
-        print(f"DEBUG: Token received")
+        print(f"DEBUG: Token response keys: {token.keys()}")
         
-        # Get user info
+        # Get email from ID token instead of Graph API
+        id_token = token.get('id_token')
+        if id_token:
+            # Decode without verification (just to read claims)
+            decoded = jwt.decode(id_token, options={"verify_signature": False})
+            print(f"DEBUG: ID token contents: {decoded}")
+            email_address = decoded.get('email') or decoded.get('preferred_username')
+            print(f"DEBUG: Email from ID token: {email_address}")
+        else:
+            email_address = None
+        
+        if not email_address:
+            return render_template('error.html', error='Could not get email address from Microsoft')
+        
         access_token = token['access_token']
-        user_response = requests.get(
-            'https://graph.microsoft.com/v1.0/me',
-            headers={'Authorization': f'Bearer {access_token}'}
-        )
-        user_info = user_response.json()
-        
-        email_address = user_info.get('mail') or user_info.get('userPrincipalName')
+        print(f"DEBUG: Access token (first 50 chars): {access_token[:50]}")  # ADD THIS
+        print(f"DEBUG: Token type: {token.get('token_type')}")  # ADD THIS
+        print(f"DEBUG: Token scope: {token.get('scope')}") 
         days = int(session.get('days', 1))
         
         # Store in session for analysis
