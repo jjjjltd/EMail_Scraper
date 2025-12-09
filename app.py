@@ -6,7 +6,6 @@ OAuth 2.0 implementation for frictionless authentication
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
-# from flask_session import Session
 import imaplib
 import email
 from email.header import decode_header
@@ -22,16 +21,9 @@ import base64
 
 # Load environment variables
 load_dotenv()
-print(f"DEBUG: FLASK_SECRET_KEY loaded: {os.getenv('FLASK_SECRET_KEY')[:10]}...")
+
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = False  # True only for HTTPS in production
-app.config['SESSION_TYPE'] = 'null'
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600
-
-# Session(app)
 
 # Test mode flag
 TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
@@ -50,7 +42,7 @@ google = oauth.register(
     client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={
-        'scope': 'openid email profile https://www.google.com/',
+        'scope': 'openid email profile https://mail.google.com/',
         'access_type': 'offline',
         'prompt': 'consent'
     }
@@ -141,12 +133,7 @@ def check_unsubscribe(email_msg):
     
     return False
 
-def generate_oauth_string(user, access_token):
-    """Generate OAuth2 string for IMAP authentication"""
-    auth_string = f'user={user}\x01auth=Bearer {access_token}\x01\x01'
-    return auth_string
-
-def analyze_emails_oauth(email_address, access_token, provider, days=1):
+def analyze_emails_oauth(email_address, access_token, provider, days):
     """Connect to IMAP using OAuth and analyze emails"""
     
     try:
@@ -160,19 +147,21 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
         
         # Connect to IMAP server
         mail = imaplib.IMAP4_SSL(imap_server)
-        mail.debug = 4
         
         # Authenticate with OAuth - different methods for different providers
         if provider == 'google':
-            # Gmail uses XOAUTH2 with base64 encoded string
-            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
-            auth_b64 = base64.b64encode(auth_string.encode('ascii')).decode('ascii')
-            mail.authenticate('XOAUTH2', lambda x: auth_b64)
-        elif provider == 'microsoft':
-            # Microsoft IMAP XOAUTH2 format - send as raw bytes, not base64-wrapped
+            # Gmail XOAUTH2 format
             auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
             
-            # Important: Don't pre-encode to base64, let imaplib handle it
+            def get_auth(challenge):
+                return auth_string.encode('utf-8')
+            
+            mail.authenticate('XOAUTH2', get_auth)
+            
+        elif provider == 'microsoft':
+            # Microsoft IMAP XOAUTH2 format
+            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+            
             def get_auth(challenge):
                 return auth_string.encode('utf-8')
             
@@ -181,17 +170,31 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
         # Select inbox
         mail.select('INBOX')
         
-        # Calculate date range
-        since_date = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
-        
-        # Search for emails in date range
-        status, messages = mail.search(None, f'SINCE {since_date}')
-        
-        if status != 'OK':
-            return {'error': 'Failed to search emails'}
-        
-        email_ids = messages[0].split()
-        total_emails = len(email_ids)
+        # Handle "first day" option
+        if days == 'first':
+            # Get ALL emails, take oldest 100
+            status, messages = mail.search(None, 'ALL')
+            if status != 'OK':
+                return {'error': 'Failed to search emails'}
+            email_ids = messages[0].split()
+            if email_ids:
+                email_ids = email_ids[:100]  # First 100 emails ever
+            total_emails = len(email_ids)
+            days_display = "first day"
+        else:
+            # Calculate date range
+            days_int = int(days)
+            since_date = (datetime.now() - timedelta(days=days_int)).strftime("%d-%b-%Y")
+            
+            # Search for emails in date range
+            status, messages = mail.search(None, f'SINCE {since_date}')
+            
+            if status != 'OK':
+                return {'error': 'Failed to search emails'}
+            
+            email_ids = messages[0].split()
+            total_emails = len(email_ids)
+            days_display = days_int
         
         # Apply limit
         if total_emails > MAX_EMAILS:
@@ -222,8 +225,8 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
                 break
                 
             try:
-                # Fetch email
-                status, msg_data = mail.fetch(email_id, '(RFC822 FLAGS)')
+                # FIX #1: Use BODY.PEEK[] to avoid marking as read
+                status, msg_data = mail.fetch(email_id, '(BODY.PEEK[] FLAGS)')
                 
                 if status != 'OK':
                     continue
@@ -307,6 +310,10 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
                 'has_unsubscribe': data['has_unsubscribe']
             })
         
+        # FIX #4: Filter out single emails in 1-day period
+        if str(days) == '1':
+            results = [r for r in results if r['count'] > 1]
+        
         # Sort by sender name (default)
         results.sort(key=lambda x: x['sender_name'].lower())
         
@@ -314,7 +321,7 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
             'success': True,
             'total_emails': total_emails,
             'senders': results,
-            'days_analyzed': days,
+            'days_analyzed': days_display,
             'test_mode': TEST_MODE
         }
         
@@ -333,7 +340,7 @@ def analyze_emails_oauth(email_address, access_token, provider, days=1):
         print(f"DEBUG: Connection error details: {e}")
         print(f"DEBUG: Traceback: {traceback.format_exc()}")
         return {'error': f'Connection error: {str(e)}'}
-    
+
 @app.route('/')
 def index():
     """Serve main page"""
@@ -343,7 +350,6 @@ def index():
 def login(provider):
     """Initiate OAuth flow for provider"""
     # Store days selection in session
-    session.permanent = True
     days = request.args.get('days', '1')
     session['days'] = days
     
@@ -369,9 +375,7 @@ def login(provider):
             f"&state={state}"
         )
         
-        print(f"DEBUG: Generated state: {state}")
         return redirect(auth_url)
-
     else:
         return jsonify({'error': 'Unknown provider'}), 400
 
@@ -384,7 +388,7 @@ def google_callback():
         
         email_address = user_info.get('email')
         access_token = token.get('access_token')
-        days = int(session.get('days', 1))
+        days = session.get('days', '1')
         
         # Store in session for analysis
         session['email'] = email_address
@@ -392,7 +396,6 @@ def google_callback():
         session['provider'] = 'google'
         session['days'] = days
         
-        # Redirect to loading page that will trigger analysis
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
@@ -401,8 +404,6 @@ def google_callback():
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
     """Handle Microsoft OAuth callback"""
-    print(f"DEBUG: Callback received")
-    print(f"DEBUG: Request args: {request.args}")
     
     code = request.args.get('code')
     state = request.args.get('state')
@@ -414,11 +415,8 @@ def microsoft_callback():
     # Clean up state
     del app.oauth_states[state]
     
-    print(f"DEBUG: State verified: {state}")
-    print(f"DEBUG: Code received: {code[:20]}...")
-    
     try:
-    # Exchange code for token manually
+        # Exchange code for token manually
         import requests
         import jwt
         
@@ -435,16 +433,12 @@ def microsoft_callback():
         token_response.raise_for_status()
         token = token_response.json()
         
-        print(f"DEBUG: Token response keys: {token.keys()}")
-        
         # Get email from ID token instead of Graph API
         id_token = token.get('id_token')
         if id_token:
             # Decode without verification (just to read claims)
             decoded = jwt.decode(id_token, options={"verify_signature": False})
-            print(f"DEBUG: ID token contents: {decoded}")
             email_address = decoded.get('email') or decoded.get('preferred_username')
-            print(f"DEBUG: Email from ID token: {email_address}")
         else:
             email_address = None
         
@@ -452,10 +446,7 @@ def microsoft_callback():
             return render_template('error.html', error='Could not get email address from Microsoft')
         
         access_token = token['access_token']
-        print(f"DEBUG: Access token (first 50 chars): {access_token[:50]}")  # ADD THIS
-        print(f"DEBUG: Token type: {token.get('token_type')}")  # ADD THIS
-        print(f"DEBUG: Token scope: {token.get('scope')}") 
-        days = int(session.get('days', 1))
+        days = session.get('days', '1')
         
         # Store in session for analysis
         session['email'] = email_address
@@ -467,52 +458,43 @@ def microsoft_callback():
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
-        print(f"DEBUG: Token exchange failed: {e}")
         return render_template('error.html', error=f'Authentication failed: {str(e)}')
-
-
-@app.route('/api/analyze')
-def api_analyze():
-    """API endpoint to perform analysis"""
-    email_address = session.get('email')
-    access_token = session.get('access_token')
-    provider = session.get('provider')
-    days = int(session.get('days', 1))
-    
-    if not email_address or not access_token:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    # Analyze emails
-    result = analyze_emails_oauth(email_address, access_token, provider, days)
-    
-    return jsonify(result)
 
 @app.route('/results')
 def results():
     """Display analysis results"""
-    print(f"DEBUG: /results session: {session}")
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
-    days = int(session.get('days', 1))
+    days = session.get('days', '1')
     
+    print(f"DEBUG /results: days={days}, type={type(days)}")
+
     if not email_address or not access_token:
         return redirect(url_for('index'))
     
     # Perform analysis
-    result = analyze_emails_oauth(email_address, access_token, provider, days)
-    
-    if result.get('error'):
-        return render_template('error.html', error=result['error'])
-    
-    # Render results using the results template
-    return render_template('results.html', 
-                         total_emails=result['total_emails'],
-                         total_senders=len(result['senders']),
-                         days_analyzed=result['days_analyzed'],
-                         senders=result['senders'],
-                         warning=result.get('warning'),
-                         test_mode=result.get('test_mode', False))
+# Perform analysis
+    try:
+        result = analyze_emails_oauth(email_address, access_token, provider, days)
+        
+        if result.get('error'):
+            return render_template('error.html', error=result['error'])
+        
+        # Render results using the results template
+        return render_template('results.html', 
+                             total_emails=result['total_emails'],
+                             total_senders=len(result['senders']),
+                             days_analyzed=result['days_analyzed'],
+                             senders=result['senders'],
+                             warning=result.get('warning'),
+                             test_mode=result.get('test_mode', False))
+                             
+    except Exception as e:
+        import traceback
+        print(f"ERROR in analyze_emails_oauth: {e}")
+        print(traceback.format_exc())
+        return render_template('error.html', error=str(e))
 
 def open_browser():
     """Open browser after short delay"""
