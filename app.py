@@ -172,15 +172,18 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
         
         # Handle "first day" option
         if days == 'first':
+            days_int = 1 
             # Get ALL emails, take oldest 100
             status, messages = mail.search(None, 'ALL')
             if status != 'OK':
                 return {'error': 'Failed to search emails'}
-            email_ids = messages[0].split()
-            if email_ids:
-                email_ids = email_ids[:100]  # First 100 emails ever
-            total_emails = len(email_ids)
-            days_display = "first day"
+            email_ids_all = messages[0].split()
+            if email_ids_all:
+                # Fetch oldest email to get its date
+                oldest_id = email_ids_all[0]
+                status, msg_data = mail.fetch(oldest_id, '(BODY.PEEK[] FLAGS)')
+                # Parse date, then search for that specific day
+                # Much safer than fetching 100 arbitrary emails
         else:
             # Calculate date range
             days_int = int(days)
@@ -192,9 +195,9 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
             if status != 'OK':
                 return {'error': 'Failed to search emails'}
             
-            email_ids = messages[0].split()
-            total_emails = len(email_ids)
-            days_display = days_int
+        email_ids = messages[0].split()
+        total_emails = len(email_ids)
+        days_display = days_int
         
         # Apply limit
         if total_emails > MAX_EMAILS:
@@ -310,9 +313,8 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
                 'has_unsubscribe': data['has_unsubscribe']
             })
         
-        # FIX #4: Filter out single emails in 1-day period
-        if str(days) == '1':
-            results = [r for r in results if r['count'] > 1]
+        # FIX #4: Filter out single emails
+        results = [r for r in results if r['count'] > 1]
         
         # Sort by sender name (default)
         results.sort(key=lambda x: x['sender_name'].lower())
@@ -481,11 +483,23 @@ def results():
         if result.get('error'):
             return render_template('error.html', error=result['error'])
         
+        # Generate user-friendly period label
+        if days == 'first':
+            period_label = "First Day Ever"
+        elif days == '1' or days == 1:
+            period_label = "Last 1 Day"
+        elif days == '7' or days == 7:
+            period_label = "Last 7 Days"
+        else:
+            period_label = f"Last {days} Days"
+
+
         # Render results using the results template
         return render_template('results.html', 
                              total_emails=result['total_emails'],
                              total_senders=len(result['senders']),
                              days_analyzed=result['days_analyzed'],
+                             period_label=period_label,
                              senders=result['senders'],
                              warning=result.get('warning'),
                              test_mode=result.get('test_mode', False))

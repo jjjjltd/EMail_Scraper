@@ -1,15 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Results - Email Scraper</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 <body>
-    <div class="container-wide">
+    <div class="container">
         <header>
             <h1>📧 Email Scraper</h1>
             <p>Analysis Results</p>
@@ -35,7 +33,7 @@
                 <h2>📊 Analysis Results</h2>
                 <div class="results-summary">
                     <strong>{{ total_emails }}</strong> emails from <strong>{{ total_senders }}</strong> senders
-                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed|int > 1 %}s{% endif %} period)
+                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed > 1 %}s{% endif %} period)
                 </div>
             </div>
 
@@ -107,8 +105,9 @@
                         {% for sender in senders %}
                         <tr>
                             <td class="checkbox-cell">
-                                <input type="checkbox" class="sender-checkbox" data-email="{{ sender.sender_email }}"
-                                    onchange="updateSelection()">
+                                <input type="checkbox" class="sender-checkbox" 
+                                       data-email="{{ sender.sender_email }}" 
+                                       onchange="updateSelection()">
                             </td>
                             <td>{{ sender.sender_name }}</td>
                             <td>{{ sender.organization }}</td>
@@ -119,8 +118,7 @@
                             <td>{{ sender.unread_pct }}%</td>
                             <td>{{ sender.nuisance }}</td>
                             <td>
-                                <span
-                                    class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
+                                <span class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
                                     {% if sender.has_unsubscribe %}Yes{% else %}No{% endif %}
                                 </span>
                             </td>
@@ -214,5 +212,4 @@
         }
     </script>
 </body>
-
 </html>
