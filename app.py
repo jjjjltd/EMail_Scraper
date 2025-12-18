@@ -172,18 +172,27 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
         
         # Handle "first day" option
         if days == 'first':
-            days_int = 1 
-            # Get ALL emails, take oldest 100
+            # Get ALL email IDs
+            # TO DO: A bit clunky - consider cleaning later.
+            days_int = 1 # Inserted to avoid reference error later
             status, messages = mail.search(None, 'ALL')
-            if status != 'OK':
-                return {'error': 'Failed to search emails'}
             email_ids_all = messages[0].split()
+            
             if email_ids_all:
-                # Fetch oldest email to get its date
+                # Fetch ONLY the oldest email to get its date
                 oldest_id = email_ids_all[0]
                 status, msg_data = mail.fetch(oldest_id, '(BODY.PEEK[] FLAGS)')
-                # Parse date, then search for that specific day
-                # Much safer than fetching 100 arbitrary emails
+                raw_email = msg_data[0][1]
+                email_msg = email.message_from_bytes(raw_email)
+                
+                # Get the date
+                date_header = email_msg.get('Date', '')
+                oldest_date = email.utils.parsedate_to_datetime(date_header)
+                
+                # Now search for ONLY emails from that specific day
+                target_date = oldest_date.strftime("%d-%b-%Y")
+                status, messages = mail.search(None, f'ON {target_date}')
+                email_ids = messages[0].split()
         else:
             # Calculate date range
             days_int = int(days)
