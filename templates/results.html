@@ -40,9 +40,6 @@
             </div>
 
             <div class="action-toolbar">
-                <button class="action-button" id="unsubscribeBtn" onclick="handleUnsubscribe()" disabled>
-                    🚫 Unsubscribe
-                </button>
                 <button class="action-button" id="createFolderBtn" onclick="handleCreateFolder()" disabled>
                     📁 Create Folder
                 </button>
@@ -51,6 +48,9 @@
                 </button>
                 <button class="action-button" id="deleteAllBtn" onclick="handleDeleteAll()" disabled>
                     🗑️ Delete All
+                </button>
+                <button class="action-button" id="unsubscribeBtn" onclick="handleUnsubscribe()" disabled>
+                    🚫 Unsubscribe
                 </button>
                 <button class="action-button" id="archiveBtn" onclick="handleArchive()" disabled>
                     📦 Archive
@@ -181,7 +181,9 @@
         }
 
         function handleUnsubscribe() {
-            alert(`Unsubscribe feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+            alert(`For now, the Unsubscribed column shows you Senders you can unsubscribe from\n\n
+            If you see value in an auto-unsubscribe, please let us know.  We will build this if there is demand!\n\n
+            Selected ${selectedSenders.size} sender(s).`);
         }
 
         function handleCreateFolder() {
