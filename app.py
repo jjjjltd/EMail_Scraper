@@ -135,7 +135,7 @@ def check_unsubscribe(email_msg):
 
 def analyze_emails_oauth(email_address, access_token, provider, days):
     """Connect to IMAP using OAuth and analyze emails"""
-    
+
     try:
         # Determine IMAP server
         if provider == 'google':
@@ -169,19 +169,25 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
         
         # Select inbox
         mail.select('INBOX')
-        
+
+        print(f"DEBUG: Analyzing emails for {email_address} from provider {provider} for days={days}")  # ADD THIS
+
         # Handle "first day" option
         if days == 'first':
-            # Get ALL email IDs
-            # TO DO: A bit clunky - consider cleaning later.
-            days_int = 1 # Inserted to avoid reference error later
+            print("DEBUG: 'first' day option selected - Google only")
+            days_int = 1  # For filtering logic
+            
+            # Get ALL email IDs to find the oldest
             status, messages = mail.search(None, 'ALL')
+            if status != 'OK':
+                return {'error': 'Failed to search emails'}
+            
             email_ids_all = messages[0].split()
             
             if email_ids_all:
                 # Fetch ONLY the oldest email to get its date
                 oldest_id = email_ids_all[0]
-                status, msg_data = mail.fetch(oldest_id, '(BODY.PEEK[] FLAGS)')
+                status, msg_data = mail.fetch(oldest_id, '(BODY.PEEK[])')
                 raw_email = msg_data[0][1]
                 email_msg = email.message_from_bytes(raw_email)
                 
@@ -189,10 +195,17 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
                 date_header = email_msg.get('Date', '')
                 oldest_date = email.utils.parsedate_to_datetime(date_header)
                 
-                # Now search for ONLY emails from that specific day
+                # Search for ONLY emails from that specific day
                 target_date = oldest_date.strftime("%d-%b-%Y")
+                print(f"DEBUG: Searching for emails ON {target_date}")
                 status, messages = mail.search(None, f'ON {target_date}')
                 email_ids = messages[0].split()
+                print(f"DEBUG: Found {len(email_ids)} emails on first day")
+            else:
+                email_ids = []
+            
+            total_emails = len(email_ids)
+            days_display = "first day"
         else:
             # Calculate date range
             days_int = int(days)
