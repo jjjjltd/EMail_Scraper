@@ -1,15 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Results - Email Scraper</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 <body>
-    <div class="container-wide">
+    <div class="container">
         <header>
             <h1>📧 Email Scraper</h1>
             <p>Analysis Results</p>
@@ -35,26 +33,40 @@
                 <h2>📊 Analysis Results</h2>
                 <div class="results-summary">
                     <strong>{{ total_emails }}</strong> emails from <strong>{{ total_senders }}</strong> senders
-                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed|int > 1 %}s{% endif %} period)
+                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed > 1 %}s{% endif %} period)
                 </div>
             </div>
 
             <div class="action-toolbar">
+                {% if features.unsubscribe %}
                 <button class="action-button" id="unsubscribeBtn" onclick="handleUnsubscribe()" disabled>
                     🚫 Unsubscribe
                 </button>
+                {% endif %}
+                
+                {% if features.create_folder %}
                 <button class="action-button" id="createFolderBtn" onclick="handleCreateFolder()" disabled>
                     📁 Create Folder
                 </button>
+                {% endif %}
+                
+                {% if features.manage_history %}
                 <button class="action-button" id="manageHistoryBtn" onclick="handleManageHistory()" disabled>
                     🗃️ Manage History
                 </button>
+                {% endif %}
+                
+                {% if features.delete_all %}
                 <button class="action-button" id="deleteAllBtn" onclick="handleDeleteAll()" disabled>
                     🗑️ Delete All
                 </button>
+                {% endif %}
+                
+                {% if features.archive %}
                 <button class="action-button" id="archiveBtn" onclick="handleArchive()" disabled>
                     📦 Archive
                 </button>
+                {% endif %}
             </div>
 
             <div class="table-wrapper">
@@ -105,10 +117,11 @@
                     </thead>
                     <tbody id="resultsBody">
                         {% for sender in senders %}
-                        <tr>
+                        <tr data-sender="{{ sender.sender_email }}">
                             <td class="checkbox-cell">
-                                <input type="checkbox" class="sender-checkbox" data-email="{{ sender.sender_email }}"
-                                    onchange="updateSelection()">
+                                <input type="checkbox" class="sender-checkbox" 
+                                       data-email="{{ sender.sender_email }}" 
+                                       onchange="updateSelection()">
                             </td>
                             <td>{{ sender.sender_name }}</td>
                             <td>{{ sender.organization }}</td>
@@ -119,8 +132,7 @@
                             <td>{{ sender.unread_pct }}%</td>
                             <td>{{ sender.nuisance }}</td>
                             <td>
-                                <span
-                                    class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
+                                <span class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
                                     {% if sender.has_unsubscribe %}Yes{% else %}No{% endif %}
                                 </span>
                             </td>
@@ -185,7 +197,145 @@
         }
 
         function handleCreateFolder() {
-            alert(`Create Folder feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+            const count = selectedSenders.size;
+            if (count === 0) return;
+            
+            if (count > 1) {
+                alert('Please select only ONE sender at a time for Create Folder action.');
+                return;
+            }
+            
+            // Get the selected sender
+            const senderEmail = Array.from(selectedSenders)[0];
+            const senderName = document.querySelector(`tr[data-sender="${senderEmail}"]`)
+                .querySelector('td:nth-child(2)').textContent.trim();
+            
+            // Show modal with default folder name
+            const defaultFolderName = senderName.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+            showCreateFolderModal(senderEmail, senderName, defaultFolderName);
+        }
+        
+        function showCreateFolderModal(senderEmail, senderName, defaultFolderName) {
+            // Create modal HTML
+            const modalHTML = `
+                <div class="modal-overlay active" id="createFolderModal">
+                    <div class="modal-dialog">
+                        <div class="modal-header">
+                            <h2>📁 Create Folder</h2>
+                            <p style="color: var(--text-light); font-size: 0.9rem;">
+                                Move emails from <strong>${senderName}</strong> (${senderEmail}) to a new folder
+                            </p>
+                        </div>
+                        <div class="modal-body">
+                            <div class="progress-message" id="progressMessage"></div>
+                            <label for="folderName">Folder Name:</label>
+                            <input type="text" id="folderName" value="${defaultFolderName}" placeholder="Enter folder name">
+                            <div class="help-text">
+                                💡 Emails will be moved to this folder. You'll need to create the email rule manually.
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-cancel" onclick="closeCreateFolderModal()">Cancel</button>
+                            <button class="btn-confirm" id="confirmCreateFolder">Create Folder & Move Emails</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add to page
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            
+            // Focus input
+            document.getElementById('folderName').focus();
+            document.getElementById('folderName').select();
+            
+            // Handle confirm
+            document.getElementById('confirmCreateFolder').addEventListener('click', function() {
+                const folderName = document.getElementById('folderName').value.trim();
+                if (!folderName) {
+                    alert('Please enter a folder name');
+                    return;
+                }
+                executeCreateFolder(senderEmail, folderName);
+            });
+            
+            // Handle Enter key
+            document.getElementById('folderName').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    document.getElementById('confirmCreateFolder').click();
+                }
+            });
+        }
+        
+        function closeCreateFolderModal() {
+            const modal = document.getElementById('createFolderModal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+        
+        function showProgress(message) {
+            const progressDiv = document.getElementById('progressMessage');
+            progressDiv.textContent = message;
+            progressDiv.classList.add('active');
+        }
+        
+        function executeCreateFolder(senderEmail, folderName) {
+            const confirmBtn = document.getElementById('confirmCreateFolder');
+            const cancelBtn = document.querySelector('.btn-cancel');
+            
+            // Disable buttons
+            confirmBtn.disabled = true;
+            cancelBtn.disabled = true;
+            confirmBtn.textContent = 'Processing...';
+            
+            showProgress('📁 Creating folder and moving emails...');
+            
+            // Send request to server
+            fetch('/action/create-folder', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sender_email: senderEmail,
+                    folder_name: folderName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showProgress(`✅ Success! Moved ${data.emails_moved} emails to "${data.folder_created}"`);
+                    
+                    // Show rule message if applicable
+                    if (data.manual_instructions) {
+                        setTimeout(() => {
+                            alert(`${data.message}\n\n⚠️ Email Rule:\n${data.rule_message}\n\nManual step required:\n${data.manual_instructions}`);
+                            closeCreateFolderModal();
+                            // Refresh page to show updated counts
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        setTimeout(() => {
+                            alert(data.message);
+                            closeCreateFolderModal();
+                            window.location.reload();
+                        }, 2000);
+                    }
+                } else {
+                    showProgress(`❌ Error: ${data.message}`);
+                    confirmBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    confirmBtn.textContent = 'Create Folder & Move Emails';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showProgress(`❌ Error: ${error.message}`);
+                confirmBtn.disabled = false;
+                cancelBtn.disabled = false;
+                confirmBtn.textContent = 'Create Folder & Move Emails';
+            });
         }
 
         function handleManageHistory() {
@@ -214,5 +364,4 @@
         }
     </script>
 </body>
-
 </html>
