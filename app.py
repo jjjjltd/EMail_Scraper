@@ -19,6 +19,10 @@ from dotenv import load_dotenv
 from authlib.integrations.flask_client import OAuth
 import base64
 
+# Import email actions and config
+from email_actions import EmailActions
+from config import FEATURES, get_enabled_actions, is_action_enabled
+
 # Load environment variables
 load_dotenv()
 
@@ -135,7 +139,7 @@ def check_unsubscribe(email_msg):
 
 def analyze_emails_oauth(email_address, access_token, provider, days):
     """Connect to IMAP using OAuth and analyze emails"""
-
+    
     try:
         # Determine IMAP server
         if provider == 'google':
@@ -169,41 +173,16 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
         
         # Select inbox
         mail.select('INBOX')
-
-        print(f"DEBUG: Analyzing emails for {email_address} from provider {provider} for days={days}")  # ADD THIS
-
+        
         # Handle "first day" option
         if days == 'first':
-            print("DEBUG: 'first' day option selected - Google only")
-            days_int = 1  # For filtering logic
-            
-            # Get ALL email IDs to find the oldest
+            # Get ALL emails, take oldest 100
             status, messages = mail.search(None, 'ALL')
             if status != 'OK':
                 return {'error': 'Failed to search emails'}
-            
-            email_ids_all = messages[0].split()
-            
-            if email_ids_all:
-                # Fetch ONLY the oldest email to get its date
-                oldest_id = email_ids_all[0]
-                status, msg_data = mail.fetch(oldest_id, '(BODY.PEEK[])')
-                raw_email = msg_data[0][1]
-                email_msg = email.message_from_bytes(raw_email)
-                
-                # Get the date
-                date_header = email_msg.get('Date', '')
-                oldest_date = email.utils.parsedate_to_datetime(date_header)
-                
-                # Search for ONLY emails from that specific day
-                target_date = oldest_date.strftime("%d-%b-%Y")
-                print(f"DEBUG: Searching for emails ON {target_date}")
-                status, messages = mail.search(None, f'ON {target_date}')
-                email_ids = messages[0].split()
-                print(f"DEBUG: Found {len(email_ids)} emails on first day")
-            else:
-                email_ids = []
-            
+            email_ids = messages[0].split()
+            if email_ids:
+                email_ids = email_ids[:100]  # First 100 emails ever
             total_emails = len(email_ids)
             days_display = "first day"
         else:
@@ -217,9 +196,9 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
             if status != 'OK':
                 return {'error': 'Failed to search emails'}
             
-        email_ids = messages[0].split()
-        total_emails = len(email_ids)
-        days_display = days_int
+            email_ids = messages[0].split()
+            total_emails = len(email_ids)
+            days_display = days_int
         
         # Apply limit
         if total_emails > MAX_EMAILS:
@@ -335,8 +314,9 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
                 'has_unsubscribe': data['has_unsubscribe']
             })
         
-        # FIX #4: Filter out single emails
-        results = [r for r in results if r['count'] > 1]
+        # FIX #4: Filter out single emails in 1-day period
+        if days == 1 or days == '1':
+            results = [r for r in results if r['count'] > 1]
         
         # Sort by sender name (default)
         results.sort(key=lambda x: x['sender_name'].lower())
@@ -492,45 +472,110 @@ def results():
     provider = session.get('provider')
     days = session.get('days', '1')
     
-    print(f"DEBUG /results: days={days}, type={type(days)}")
-
     if not email_address or not access_token:
         return redirect(url_for('index'))
     
     # Perform analysis
-# Perform analysis
+    result = analyze_emails_oauth(email_address, access_token, provider, days)
+    
+    if result.get('error'):
+        return render_template('error.html', error=result['error'])
+    
+    # Generate user-friendly period label
+    if days == 'first':
+        period_label = "First Day Ever"
+    elif days == '1' or days == 1:
+        period_label = "Last 1 Day"
+    elif days == '7' or days == 7:
+        period_label = "Last 7 Days"
+    else:
+        period_label = f"Last {days} Days"
+    
+    # Render results using the results template
+    return render_template('results.html', 
+                         total_emails=result['total_emails'],
+                         total_senders=len(result['senders']),
+                         days_analyzed=result['days_analyzed'],
+                         period_label=period_label,
+                         senders=result['senders'],
+                         warning=result.get('warning'),
+                         test_mode=result.get('test_mode', False),
+                         features=FEATURES)
+
+@app.route('/action/create-folder', methods=['POST'])
+def action_create_folder():
+    """Handle Create Folder action"""
+    
+    # Check if feature is enabled
+    if not is_action_enabled('create_folder'):
+        return jsonify({'success': False, 'message': 'Create Folder feature is not enabled'})
+    
+    # Get session data
+    email_address = session.get('email')
+    access_token = session.get('access_token')
+    provider = session.get('provider')
+    
+    if not email_address or not access_token:
+        return jsonify({'success': False, 'message': 'Not authenticated. Please log in again.'})
+    
+    # Get request data
+    data = request.get_json()
+    sender_email = data.get('sender_email')
+    folder_name = data.get('folder_name')
+    
+    if not sender_email or not folder_name:
+        return jsonify({'success': False, 'message': 'Missing sender_email or folder_name'})
+    
+    print(f"DEBUG: Create folder action for {sender_email} -> {folder_name}")
+    
     try:
-        result = analyze_emails_oauth(email_address, access_token, provider, days)
-        
-        if result.get('error'):
-            return render_template('error.html', error=result['error'])
-        
-        # Generate user-friendly period label
-        if days == 'first':
-            period_label = "First Day Ever"
-        elif days == '1' or days == 1:
-            period_label = "Last 1 Day"
-        elif days == '7' or days == 7:
-            period_label = "Last 7 Days"
+        # Determine IMAP server
+        if provider == 'google':
+            imap_server = 'imap.gmail.com'
+        elif provider == 'microsoft':
+            imap_server = 'imap-mail.outlook.com'
         else:
-            period_label = f"Last {days} Days"
-
-
-        # Render results using the results template
-        return render_template('results.html', 
-                             total_emails=result['total_emails'],
-                             total_senders=len(result['senders']),
-                             days_analyzed=result['days_analyzed'],
-                             period_label=period_label,
-                             senders=result['senders'],
-                             warning=result.get('warning'),
-                             test_mode=result.get('test_mode', False))
-                             
+            return jsonify({'success': False, 'message': 'Unknown provider'})
+        
+        # Connect to IMAP
+        mail = imaplib.IMAP4_SSL(imap_server)
+        
+        # Authenticate
+        auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+        
+        def get_auth(challenge):
+            return auth_string.encode('utf-8')
+        
+        mail.authenticate('XOAUTH2', get_auth)
+        
+        # Execute create folder action
+        result = EmailActions.create_folder(mail, sender_email, folder_name, provider)
+        
+        # Try to create email rule (will inform user if not possible via IMAP)
+        rule_result = EmailActions.create_email_rule(mail, sender_email, folder_name, provider)
+        
+        # Close connection
+        mail.close()
+        mail.logout()
+        
+        # Combine results
+        response = {
+            'success': result['success'],
+            'message': result['message'],
+            'emails_moved': result.get('emails_moved', 0),
+            'folder_created': result.get('folder_created'),
+            'rule_created': rule_result['success'],
+            'rule_message': rule_result['message'],
+            'manual_instructions': rule_result.get('manual_instructions')
+        }
+        
+        return jsonify(response)
+        
     except Exception as e:
         import traceback
-        print(f"ERROR in analyze_emails_oauth: {e}")
+        print(f"DEBUG: Error in create_folder action: {e}")
         print(traceback.format_exc())
-        return render_template('error.html', error=str(e))
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 def open_browser():
     """Open browser after short delay"""
