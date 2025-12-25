@@ -218,24 +218,38 @@
             const count = selectedSenders.size;
             if (count === 0) return;
 
-            if (count > 1) {
-                alert('Please select only ONE sender at a time for Create Folder action.');
+            // Get all selected senders
+            const senders = Array.from(selectedSenders);
+
+            // For now, process them sequentially
+            // Could batch in future
+            if (!confirm(`Create folders for ${count} sender(s)?\n\nThis will create a separate folder for each sender.`)) {
                 return;
             }
 
-            // Get the selected sender
-            const senderEmail = Array.from(selectedSenders)[0];
+            processSendersSequentially(senders, 0);
+        }
+
+        function processSendersSequentially(senders, index) {
+            if (index >= senders.length) {
+                alert(`✅ Finished processing ${senders.length} sender(s)!`);
+                window.location.reload();
+                return;
+            }
+
+            const senderEmail = senders[index];
             const senderRow = document.querySelector(`tr[data-sender="${senderEmail}"]`);
             if (!senderRow) {
-                alert('Error: Could not find sender information');
+                // Skip this one, move to next
+                processSendersSequentially(senders, index + 1);
                 return;
             }
 
             const senderName = senderRow.querySelector('td:nth-child(2)').textContent.trim();
-
-            // Show modal with default folder name
             const defaultFolderName = senderName.replace(/[^a-zA-Z0-9\s]/g, '').trim();
-            showCreateFolderModal(senderEmail, senderName, defaultFolderName);
+
+            // Show modal for this sender
+            showCreateFolderModal(senderEmail, senderName, defaultFolderName, senders, index);
         }
 
         function showCreateFolderModal(senderEmail, senderName, defaultFolderName) {
