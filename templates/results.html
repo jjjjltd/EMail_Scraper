@@ -167,27 +167,22 @@
     </div>
 
     <script>
-        // Track selected senders
-        const selectedSenders = new Set();
+        let selectedSenders = new Set();
+
+        function updateSelection() {
+            const checkboxes = document.querySelectorAll('.sender-checkbox:checked');
+            selectedSenders.clear();
+            checkboxes.forEach(cb => selectedSenders.add(cb.dataset.email));
+            updateActionButtons();
+        }
 
         function toggleSelectAll() {
             const selectAll = document.getElementById('selectAll');
             const checkboxes = document.querySelectorAll('.sender-checkbox');
-
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = selectAll.checked;
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
             });
-
             updateSelection();
-        }
-
-        function updateSelection() {
-            selectedSenders.clear();
-            document.querySelectorAll('.sender-checkbox:checked').forEach(checkbox => {
-                selectedSenders.add(checkbox.dataset.email);
-            });
-
-            updateActionButtons();
         }
 
         function updateActionButtons() {
@@ -206,12 +201,8 @@
             if (deleteAllBtn) deleteAllBtn.disabled = !hasSelection;
             if (archiveBtn) archiveBtn.disabled = !hasSelection;
         }
-
         function handleUnsubscribe() {
-            const count = selectedSenders.size;
-            if (count === 0) return;
-
-            alert('For now, the Unsubscribed column shows you Senders you can unsubscribe from\n\nIf you see value in an auto-unsubscribe, please let us know.\nWe will build this if there is demand!\n\nSelected ' + count + ' sender(s).');
+            alert(`Unsubscribe feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
         }
 
         function handleCreateFolder() {
@@ -219,40 +210,34 @@
             if (count === 0) return;
 
             // Get all selected senders
-            const senders = Array.from(selectedSenders);
+            const senderEmails = Array.from(selectedSenders);
+            const senderNames = [];
 
-            // For now, process them sequentially
-            // Could batch in future
-            if (!confirm(`Create folders for ${count} sender(s)?\n\nThis will create a separate folder for each sender.`)) {
+            // Collect sender names
+            senderEmails.forEach(email => {
+                const row = document.querySelector(`tr[data-sender="${email}"]`);
+                if (row) {
+                    const name = row.querySelector('td:nth-child(2)').textContent.trim();
+                    senderNames.push(name);
+                }
+            });
+
+            if (senderNames.length === 0) {
+                alert('Error: Could not find sender information');
                 return;
             }
 
-            processSendersSequentially(senders, 0);
+            // Default folder name: first 5 chars of first sender
+            const defaultFolderName = senderNames[0].substring(0, 5).replace(/[^a-zA-Z0-9]/g, '');
+
+            // Show modal with folder name prompt
+            showCreateFolderModal(senderEmails, senderNames, defaultFolderName);
         }
 
-        function processSendersSequentially(senders, index) {
-            if (index >= senders.length) {
-                alert(`✅ Finished processing ${senders.length} sender(s)!`);
-                window.location.reload();
-                return;
-            }
+        function showCreateFolderModal(senderEmails, senderNames, defaultFolderName) {
+            const senderCount = senderEmails.length;
+            const senderList = senderNames.join(', ');
 
-            const senderEmail = senders[index];
-            const senderRow = document.querySelector(`tr[data-sender="${senderEmail}"]`);
-            if (!senderRow) {
-                // Skip this one, move to next
-                processSendersSequentially(senders, index + 1);
-                return;
-            }
-
-            const senderName = senderRow.querySelector('td:nth-child(2)').textContent.trim();
-            const defaultFolderName = senderName.replace(/[^a-zA-Z0-9\s]/g, '').trim();
-
-            // Show modal for this sender
-            showCreateFolderModal(senderEmail, senderName, defaultFolderName, senders, index);
-        }
-
-        function showCreateFolderModal(senderEmail, senderName, defaultFolderName) {
             // Create modal HTML
             const modalHTML = `
                 <div class="modal-overlay active" id="createFolderModal">
@@ -260,7 +245,7 @@
                         <div class="modal-header">
                             <h2>📁 Create Folder</h2>
                             <p style="color: var(--text-light); font-size: 0.9rem;">
-                                Move emails from <strong>${senderName}</strong> (${senderEmail}) to a new folder
+                                Move emails from <strong>${senderCount} sender(s)</strong>: ${senderList}
                             </p>
                         </div>
                         <div class="modal-body">
@@ -268,12 +253,12 @@
                             <label for="folderName">Folder Name:</label>
                             <input type="text" id="folderName" value="${defaultFolderName}" placeholder="Enter folder name">
                             <div class="help-text">
-                                💡 Emails will be moved to this folder. You'll need to create the email rule manually.
+                                💡 All emails from selected senders will be moved to this folder.
                             </div>
                         </div>
                         <div class="modal-footer">
                             <button class="btn-cancel" onclick="closeCreateFolderModal()">Cancel</button>
-                            <button class="btn-confirm" id="confirmCreateFolder">Create Folder & Move Emails</button>
+                            <button class="btn-confirm" id="confirmCalculate">Next: Count Emails</button>
                         </div>
                     </div>
                 </div>
@@ -286,22 +271,145 @@
             document.getElementById('folderName').focus();
             document.getElementById('folderName').select();
 
-            // Handle confirm
-            document.getElementById('confirmCreateFolder').addEventListener('click', function () {
+            // Handle "Next: Count Emails" button
+            document.getElementById('confirmCalculate').addEventListener('click', function () {
                 const folderName = document.getElementById('folderName').value.trim();
                 if (!folderName) {
                     alert('Please enter a folder name');
                     return;
                 }
-                executeCreateFolder(senderEmail, folderName);
+                // Start calculation phase
+                calculateEmailCount(senderEmails, folderName);
             });
 
             // Handle Enter key
             document.getElementById('folderName').addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') {
-                    document.getElementById('confirmCreateFolder').click();
+                    document.getElementById('confirmCalculate').click();
                 }
             });
+        }
+
+        function calculateEmailCount(senderEmails, folderName) {
+            const confirmBtn = document.getElementById('confirmCalculate');
+            const cancelBtn = document.querySelector('.btn-cancel');
+
+            // Disable buttons during calculation
+            confirmBtn.disabled = true;
+            cancelBtn.disabled = true;
+            confirmBtn.textContent = 'Calculating...';
+
+            showProgress('🔍 Counting all emails over all time...');
+
+            // Call backend to count emails
+            fetch('/action/count-emails', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sender_emails: senderEmails
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show confirmation with total count
+                        showConfirmDialog(senderEmails, folderName, data.total_emails, data.sender_count);
+                    } else {
+                        showProgress(`❌ Error: ${data.message}`);
+                        confirmBtn.disabled = false;
+                        cancelBtn.disabled = false;
+                        confirmBtn.textContent = 'Next: Count Emails';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showProgress(`❌ Error: ${error.message}`);
+                    confirmBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    confirmBtn.textContent = 'Next: Count Emails';
+                });
+        }
+
+        function showConfirmDialog(senderEmails, folderName, totalEmails, senderCount) {
+            // Update modal to show confirmation
+            const modalDialog = document.querySelector('.modal-dialog');
+            modalDialog.innerHTML = `
+                <div class="modal-header">
+                    <h2>📁 Confirm Create Folder</h2>
+                </div>
+                <div class="modal-body">
+                    <div class="progress-message" id="progressMessage"></div>
+                    <p style="font-size: 1.1rem; margin-bottom: 1rem;">
+                        Found <strong>${totalEmails.toLocaleString()}</strong> emails from <strong>${senderCount}</strong> sender(s) over all time.
+                    </p>
+                    <p style="color: var(--text-light);">
+                        Move all to folder "<strong>${folderName}</strong>"?
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeCreateFolderModal()">Cancel</button>
+                    <button class="btn-confirm" id="confirmMove">Move ${totalEmails.toLocaleString()} Emails</button>
+                </div>
+            `;
+
+            // Handle move confirmation
+            document.getElementById('confirmMove').addEventListener('click', function () {
+                executeCreateFolder(senderEmails, folderName, totalEmails);
+            });
+        }
+
+        function executeCreateFolder(senderEmails, folderName, expectedTotal) {
+            const confirmBtn = document.getElementById('confirmMove');
+            const cancelBtn = document.querySelector('.btn-cancel');
+
+            // Disable buttons
+            confirmBtn.disabled = true;
+            cancelBtn.disabled = true;
+            confirmBtn.textContent = 'Moving...';
+
+            showProgress(`📁 Creating folder and moving emails... (0/${expectedTotal.toLocaleString()})`);
+
+            // Send request to server
+            fetch('/action/create-folder', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sender_emails: senderEmails,
+                    folder_name: folderName
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showProgress(`✅ Success! Moved ${data.emails_moved.toLocaleString()} emails to "${data.folder_created}"`);
+
+                        setTimeout(() => {
+                            if (data.manual_instructions) {
+                                alert(`${data.message}\n\n⚠️ Email Rule:\n${data.rule_message}\n\nManual step required:\n${data.manual_instructions}`);
+                            } else {
+                                alert(data.message);
+                            }
+                            closeCreateFolderModal();
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        showProgress(`❌ Error: ${data.message}`);
+                        confirmBtn.disabled = false;
+                        cancelBtn.disabled = false;
+                        confirmBtn.textContent = 'Move Emails';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showProgress(`❌ Error: ${error.message}`);
+                    confirmBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    confirmBtn.textContent = 'Move Emails';
+                });
         }
 
         function closeCreateFolderModal() {
@@ -313,69 +421,10 @@
 
         function showProgress(message) {
             const progressDiv = document.getElementById('progressMessage');
-            if (progressDiv) {
-                progressDiv.textContent = message;
-                progressDiv.classList.add('active');
-            }
+            progressDiv.textContent = message;
+            progressDiv.classList.add('active');
         }
 
-        function executeCreateFolder(senderEmail, folderName) {
-            const confirmBtn = document.getElementById('confirmCreateFolder');
-            const cancelBtn = document.querySelector('.btn-cancel');
-
-            // Disable buttons
-            confirmBtn.disabled = true;
-            cancelBtn.disabled = true;
-            confirmBtn.textContent = 'Processing...';
-
-            showProgress('📁 Creating folder and moving emails...');
-
-            // Send request to server
-            fetch('/action/create-folder', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    sender_email: senderEmail,
-                    folder_name: folderName
-                })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showProgress(`✅ Success! Moved ${data.emails_moved} emails to "${data.folder_created}"`);
-
-                        // Show rule message if applicable
-                        if (data.manual_instructions) {
-                            setTimeout(() => {
-                                alert(`${data.message}\n\n⚠️ Email Rule:\n${data.rule_message}\n\nManual step required:\n${data.manual_instructions}`);
-                                closeCreateFolderModal();
-                                // Refresh page to show updated counts
-                                window.location.reload();
-                            }, 2000);
-                        } else {
-                            setTimeout(() => {
-                                alert(data.message);
-                                closeCreateFolderModal();
-                                window.location.reload();
-                            }, 2000);
-                        }
-                    } else {
-                        showProgress(`❌ Error: ${data.message}`);
-                        confirmBtn.disabled = false;
-                        cancelBtn.disabled = false;
-                        confirmBtn.textContent = 'Create Folder & Move Emails';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showProgress(`❌ Error: ${error.message}`);
-                    confirmBtn.disabled = false;
-                    cancelBtn.disabled = false;
-                    confirmBtn.textContent = 'Create Folder & Move Emails';
-                });
-        }
 
         function handleManageHistory() {
             alert(`Manage History feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);

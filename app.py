@@ -22,6 +22,7 @@ import base64
 # Import email actions and config
 from email_actions import EmailActions
 from config import FEATURES, get_enabled_actions, is_action_enabled
+from gmail_api import GmailAPI
 
 # Load environment variables
 load_dotenv()
@@ -502,6 +503,100 @@ def results():
                          test_mode=result.get('test_mode', False),
                          features=FEATURES)
 
+@app.route('/action/count-emails', methods=['POST'])
+def action_count_emails():
+    """Count total emails from selected senders (all time, no date filter)"""
+    
+    # Check if feature is enabled
+    if not is_action_enabled('create_folder'):
+        return jsonify({'success': False, 'message': 'Feature not enabled'})
+    
+    # Get session data
+    email_address = session.get('email')
+    access_token = session.get('access_token')
+    provider = session.get('provider')
+    
+    if not email_address or not access_token:
+        return jsonify({'success': False, 'message': 'Not authenticated'})
+    
+    # Get request data
+    data = request.get_json()
+    sender_emails = data.get('sender_emails', [])
+    
+    if not sender_emails:
+        return jsonify({'success': False, 'message': 'No senders provided'})
+    
+    print(f"DEBUG: Counting emails from {len(sender_emails)} senders")
+    
+    try:
+        # Use Gmail API for Google (faster and more reliable)
+        if provider == 'google':
+            print("DEBUG: Using Gmail API for counting emails")
+            
+            gmail = GmailAPI(access_token)
+            total_emails = 0
+            
+            for sender_email in sender_emails:
+                message_ids = gmail.search_messages(sender_email)
+                total_emails += len(message_ids)
+            
+            print(f"DEBUG: Total emails from all senders: {total_emails}")
+            
+            return jsonify({
+                'success': True,
+                'total_emails': total_emails,
+                'sender_count': len(sender_emails)
+            })
+        
+        # Use IMAP for Microsoft and other providers
+        # Determine IMAP server
+        if provider == 'microsoft':
+            imap_server = 'imap-mail.outlook.com'
+        else:
+            return jsonify({'success': False, 'message': 'Unknown provider'})
+        
+        # Connect to IMAP
+        mail = imaplib.IMAP4_SSL(imap_server)
+        
+        # Authenticate
+        auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+        
+        def get_auth(challenge):
+            return auth_string.encode('utf-8')
+        
+        mail.authenticate('XOAUTH2', get_auth)
+        mail.select('INBOX', readonly=True)
+        
+        # Count emails from all senders
+        total_emails = 0
+        for sender_email in sender_emails:
+            search_criteria = f'(FROM "{sender_email}")'
+            status, messages = mail.search(None, search_criteria)
+            
+            if status == 'OK' and messages[0]:
+                email_ids = messages[0].split()
+                count = len(email_ids)
+                total_emails += count
+                print(f"DEBUG: Found {count} emails from {sender_email}")
+        
+        # Close connection
+        mail.close()
+        mail.logout()
+        
+        print(f"DEBUG: Total emails from all senders: {total_emails}")
+        
+        return jsonify({
+            'success': True,
+            'total_emails': total_emails,
+            'sender_count': len(sender_emails)
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"DEBUG: Error counting emails: {e}")
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
 @app.route('/action/create-folder', methods=['POST'])
 def action_create_folder():
     """Handle Create Folder action"""
@@ -520,15 +615,51 @@ def action_create_folder():
     
     # Get request data
     data = request.get_json()
-    sender_email = data.get('sender_email')
+    sender_emails = data.get('sender_emails', [])
     folder_name = data.get('folder_name')
     
-    if not sender_email or not folder_name:
-        return jsonify({'success': False, 'message': 'Missing sender_email or folder_name'})
+    # Support both single sender (legacy) and multiple senders
+    if not sender_emails:
+        # Fall back to single sender format
+        single_sender = data.get('sender_email')
+        if single_sender:
+            sender_emails = [single_sender]
     
-    print(f"DEBUG: Create folder action for {sender_email} -> {folder_name}")
+    if not sender_emails or not folder_name:
+        return jsonify({'success': False, 'message': 'Missing sender_emails or folder_name'})
+    
+    print(f"DEBUG: Create folder action for {len(sender_emails)} sender(s) -> {folder_name}")
     
     try:
+        # Use Gmail API for Google (more reliable than IMAP)
+        if provider == 'google':
+            print("DEBUG: Using Gmail API for folder operations")
+            
+            # Gmail API doesn't need IMAP connection
+            result = EmailActions.create_folder_gmail(access_token, sender_emails, folder_name)
+            
+            # Gmail API handles label creation, so no separate rule needed
+            # But inform user about creating filters manually if desired
+            rule_result = {
+                'success': False,
+                'message': 'Gmail filters can be created manually in Gmail settings',
+                'manual_instructions': f'Optional: Create filter FROM {", ".join(sender_emails)} → Move to {folder_name}'
+            }
+            
+            response = {
+                'success': result['success'],
+                'message': result['message'],
+                'emails_moved': result.get('emails_moved', 0),
+                'failed_count': result.get('failed_count', 0),
+                'folder_created': result.get('folder_created'),
+                'rule_created': False,
+                'rule_message': rule_result['message'],
+                'manual_instructions': rule_result.get('manual_instructions')
+            }
+            
+            return jsonify(response)
+        
+        # Use IMAP for Microsoft and other providers
         # Determine IMAP server
         if provider == 'google':
             imap_server = 'imap.gmail.com'
@@ -548,11 +679,13 @@ def action_create_folder():
         
         mail.authenticate('XOAUTH2', get_auth)
         
-        # Execute create folder action
-        result = EmailActions.create_folder(mail, sender_email, folder_name, provider)
+        # Execute create folder action (now supports multiple senders)
+        result = EmailActions.create_folder(mail, sender_emails, folder_name, provider)
         
-        # Try to create email rule (will inform user if not possible via IMAP)
-        rule_result = EmailActions.create_email_rule(mail, sender_email, folder_name, provider)
+        # Try to create email rule for first sender (will inform user if not possible via IMAP)
+        # Note: Rules typically apply per sender, so we just mention it for the first one
+        first_sender = sender_emails[0] if sender_emails else ''
+        rule_result = EmailActions.create_email_rule(mail, first_sender, folder_name, provider)
         
         # Close connection
         mail.close()
