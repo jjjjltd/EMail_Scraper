@@ -14,13 +14,13 @@ class EmailActions:
     """Handles all email manipulation actions (create folder, delete, archive, etc.)"""
     
     @staticmethod
-    def create_folder(mail, sender_email, folder_name, provider='google'):
+    def create_folder(mail, sender_emails, folder_name, provider='google'):
         """
-        Create a folder and move all emails from sender into it
+        Create a folder and move all emails from sender(s) into it
         
         Args:
             mail: Active IMAP connection
-            sender_email: Email address of sender
+            sender_emails: Email address(es) of sender(s) - can be string or list
             folder_name: Name of folder to create
             provider: 'google' or 'microsoft'
         
@@ -28,6 +28,10 @@ class EmailActions:
             dict: {'success': bool, 'message': str, 'emails_moved': int, 'folder_created': str}
         """
         try:
+            # Support both single sender and multiple senders
+            if isinstance(sender_emails, str):
+                sender_emails = [sender_emails]
+            
             # Normalize folder name for IMAP
             if provider == 'google':
                 # Gmail uses format: [Gmail]/FolderName or just FolderName
@@ -62,55 +66,52 @@ class EmailActions:
             # Select inbox
             mail.select('INBOX')
             
-            # Search for all emails from sender
-            # Using FROM search criterion
-            search_criteria = f'(FROM "{sender_email}")'
-            status, messages = mail.search(None, search_criteria)
-            
-            if status != 'OK':
-                return {
-                    'success': False,
-                    'message': f'Failed to search for emails: {status}',
-                    'emails_moved': 0,
-                    'folder_created': imap_folder
-                }
-            
-            email_ids = messages[0].split()
-            total_emails = len(email_ids)
-            
-            if total_emails == 0:
-                return {
-                    'success': True,
-                    'message': f'No emails found from {sender_email}',
-                    'emails_moved': 0,
-                    'folder_created': imap_folder
-                }
-            
-            print(f"DEBUG: Found {total_emails} emails to move")
-            
-            # Move emails to folder
-            moved_count = 0
-            for email_id in email_ids:
-                try:
-                    # Copy email to new folder
-                    status, response = mail.copy(email_id, imap_folder)
-                    if status == 'OK':
-                        # Mark original for deletion
-                        mail.store(email_id, '+FLAGS', '\\Deleted')
-                        moved_count += 1
-                except Exception as e:
-                    print(f"DEBUG: Error moving email {email_id}: {e}")
+            # Process all senders
+            total_moved = 0
+            for sender_email in sender_emails:
+                # Search for all emails from this sender
+                search_criteria = f'(FROM "{sender_email}")'
+                status, messages = mail.search(None, search_criteria)
+                
+                if status != 'OK':
+                    print(f"DEBUG: Failed to search for {sender_email}: {status}")
                     continue
+                
+                email_ids = messages[0].split()
+                sender_count = len(email_ids)
+                
+                if sender_count == 0:
+                    print(f"DEBUG: No emails found from {sender_email}")
+                    continue
+                
+                print(f"DEBUG: Found {sender_count} emails from {sender_email}")
+                
+                # Move emails to folder
+                moved_count = 0
+                for email_id in email_ids:
+                    try:
+                        # Copy email to new folder
+                        status, response = mail.copy(email_id, imap_folder)
+                        if status == 'OK':
+                            # Mark original for deletion
+                            mail.store(email_id, '+FLAGS', '\\Deleted')
+                            moved_count += 1
+                    except Exception as e:
+                        print(f"DEBUG: Error moving email {email_id}: {e}")
+                        continue
+                
+                print(f"DEBUG: Moved {moved_count}/{sender_count} emails from {sender_email}")
+                total_moved += moved_count
             
             # Expunge to actually delete marked emails
             mail.expunge()
             
-            print(f"DEBUG: Moved {moved_count}/{total_emails} emails")
+            print(f"DEBUG: Total moved: {total_moved} emails")
             
             return {
                 'success': True,
-                'message': f'Successfully moved {moved_count} emails to {folder_name}',
-                'emails_moved': moved_count,
+                'message': f'Successfully moved {total_moved} emails to {folder_name}',
+                'emails_moved': total_moved,
                 'folder_created': imap_folder
             }
             
