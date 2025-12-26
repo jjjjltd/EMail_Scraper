@@ -22,6 +22,7 @@ import base64
 # Import email actions and config
 from email_actions import EmailActions
 from config import FEATURES, get_enabled_actions, is_action_enabled
+from gmail_api import GmailAPI
 
 # Load environment variables
 load_dotenv()
@@ -528,10 +529,28 @@ def action_count_emails():
     print(f"DEBUG: Counting emails from {len(sender_emails)} senders")
     
     try:
-        # Determine IMAP server
+        # Use Gmail API for Google (faster and more reliable)
         if provider == 'google':
-            imap_server = 'imap.gmail.com'
-        elif provider == 'microsoft':
+            print("DEBUG: Using Gmail API for counting emails")
+            
+            gmail = GmailAPI(access_token)
+            total_emails = 0
+            
+            for sender_email in sender_emails:
+                message_ids = gmail.search_messages(sender_email)
+                total_emails += len(message_ids)
+            
+            print(f"DEBUG: Total emails from all senders: {total_emails}")
+            
+            return jsonify({
+                'success': True,
+                'total_emails': total_emails,
+                'sender_count': len(sender_emails)
+            })
+        
+        # Use IMAP for Microsoft and other providers
+        # Determine IMAP server
+        if provider == 'microsoft':
             imap_server = 'imap-mail.outlook.com'
         else:
             return jsonify({'success': False, 'message': 'Unknown provider'})
@@ -612,6 +631,35 @@ def action_create_folder():
     print(f"DEBUG: Create folder action for {len(sender_emails)} sender(s) -> {folder_name}")
     
     try:
+        # Use Gmail API for Google (more reliable than IMAP)
+        if provider == 'google':
+            print("DEBUG: Using Gmail API for folder operations")
+            
+            # Gmail API doesn't need IMAP connection
+            result = EmailActions.create_folder_gmail(access_token, sender_emails, folder_name)
+            
+            # Gmail API handles label creation, so no separate rule needed
+            # But inform user about creating filters manually if desired
+            rule_result = {
+                'success': False,
+                'message': 'Gmail filters can be created manually in Gmail settings',
+                'manual_instructions': f'Optional: Create filter FROM {", ".join(sender_emails)} → Move to {folder_name}'
+            }
+            
+            response = {
+                'success': result['success'],
+                'message': result['message'],
+                'emails_moved': result.get('emails_moved', 0),
+                'failed_count': result.get('failed_count', 0),
+                'folder_created': result.get('folder_created'),
+                'rule_created': False,
+                'rule_message': rule_result['message'],
+                'manual_instructions': rule_result.get('manual_instructions')
+            }
+            
+            return jsonify(response)
+        
+        # Use IMAP for Microsoft and other providers
         # Determine IMAP server
         if provider == 'google':
             imap_server = 'imap.gmail.com'

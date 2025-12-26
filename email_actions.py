@@ -9,9 +9,45 @@ import email
 from datetime import datetime
 import re
 
+# Import Gmail API for reliable Gmail operations
+from gmail_api import GmailAPI
+
 
 class EmailActions:
     """Handles all email manipulation actions (create folder, delete, archive, etc.)"""
+    
+    @staticmethod
+    def create_folder_gmail(access_token, sender_emails, folder_name):
+        """
+        Create a folder and move emails using Gmail API (reliable for Gmail)
+        
+        Args:
+            access_token: OAuth2 access token
+            sender_emails: Email address(es) of sender(s) - can be string or list
+            folder_name: Name of folder/label to create
+        
+        Returns:
+            dict: {'success': bool, 'message': str, 'emails_moved': int, 'folder_created': str}
+        """
+        try:
+            # Initialize Gmail API
+            gmail = GmailAPI(access_token)
+            
+            # Use Gmail API to create folder and move emails
+            result = gmail.create_folder_and_move(sender_emails, folder_name)
+            
+            return result
+            
+        except Exception as e:
+            import traceback
+            print(f"DEBUG: create_folder_gmail error: {e}")
+            print(traceback.format_exc())
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'emails_moved': 0,
+                'folder_created': None
+            }
     
     @staticmethod
     def create_folder(mail, sender_emails, folder_name, provider='google'):
