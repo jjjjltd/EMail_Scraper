@@ -231,6 +231,9 @@ class GmailAPI:
                     total_moved += move_result.get('moved_count', 0)
                     total_failed += move_result.get('failed_count', 0)
             
+                filter_result = self.create_gmail_filter(sender_email, label_id)
+                filters_created += 1
+
             return {
                 'success': True,
                 'message': f"Successfully moved {total_moved} emails to {folder_name}",

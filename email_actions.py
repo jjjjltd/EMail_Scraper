@@ -273,3 +273,27 @@ class EmailActions:
             'emails_archived': 0,
             'archive_file': None
         }
+    def create_gmail_filter(self, sender_email, label_id):
+        """
+        Create Gmail filter to auto-label future emails
+        
+        Args:
+            sender_email: Email address to filter
+            label_id: Label to apply
+        """
+        filter_content = {
+            'criteria': {
+                'from': sender_email
+            },
+            'action': {
+                'addLabelIds': [label_id],
+                'removeLabelIds': ['INBOX']
+            }
+        }
+        
+        created_filter = self.service.users().settings().filters().create(
+            userId='me',
+            body=filter_content
+        ).execute()
+        
+        return created_filter
