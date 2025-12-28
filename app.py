@@ -47,7 +47,7 @@ google = oauth.register(
     client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={
-        'scope': 'openid email profile https://mail.google.com/',
+        'scope': 'openid email profile https://mail.google.com/ https://www.googleapis.com/auth/gmail.settings.basic',
         'access_type': 'offline',
         'prompt': 'consent'
     }

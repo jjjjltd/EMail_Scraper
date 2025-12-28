@@ -134,10 +134,45 @@ class GmailAPI:
         try:
             # Build query based on days
             if days == 'first':
-                # Get oldest 100 messages
+                # Get oldest 100 messages - need to search all then sort
                 query = ''
                 max_results = 100
                 print(f"DEBUG: Listing first {max_results} messages (oldest)")
+                
+                # For "first day", we need to get ALL message IDs first, then take oldest
+                # Gmail API doesn't have a "sort by oldest" parameter directly
+                # So we'll get messages and reverse the list (newest first by default)
+                all_msg_ids = []
+                page_token = None
+                
+                # Get all message IDs (just IDs, very fast)
+                while True:
+                    results = self.service.users().messages().list(
+                        userId='me',
+                        q=query,
+                        maxResults=500,
+                        pageToken=page_token,
+                        includeSpamTrash=False
+                    ).execute()
+                    
+                    messages = results.get('messages', [])
+                    if not messages:
+                        break
+                    
+                    all_msg_ids.extend(messages)
+                    
+                    page_token = results.get('nextPageToken')
+                    if not page_token:
+                        break
+                
+                # Reverse to get oldest first, then take first 100
+                all_msg_ids.reverse()
+                all_messages = all_msg_ids[:100] if len(all_msg_ids) > 100 else all_msg_ids
+                
+                print(f"DEBUG: Found {len(all_messages)} oldest messages out of {len(all_msg_ids)} total")
+                
+                return all_messages
+                
             else:
                 # Calculate date for query
                 from datetime import datetime, timedelta
@@ -340,6 +375,41 @@ class GmailAPI:
                 'moved_count': 0,
                 'message': f"Error: {str(e)}"
             }
+    
+    def create_gmail_filter(self, sender_email, label_id):
+        """
+        Create Gmail filter to auto-label future emails from sender
+        
+        Args:
+            sender_email: Email address to filter
+            label_id: Label ID to apply
+            
+        Returns:
+            dict: Filter details if successful, None if failed
+        """
+        try:
+            filter_content = {
+                'criteria': {
+                    'from': sender_email
+                },
+                'action': {
+                    'addLabelIds': [label_id],
+                    'removeLabelIds': ['INBOX']
+                }
+            }
+            
+            created_filter = self.service.users().settings().filters().create(
+                userId='me',
+                body=filter_content
+            ).execute()
+            
+            print(f"DEBUG: Created filter for {sender_email} (filter ID: {created_filter.get('id')})")
+            
+            return created_filter
+            
+        except Exception as e:
+            print(f"DEBUG: Error creating filter for {sender_email}: {e}")
+            return None
     
     def create_folder_and_move(self, sender_emails, folder_name):
         """
