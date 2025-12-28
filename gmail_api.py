@@ -78,7 +78,7 @@ class GmailAPI:
     
     def search_messages(self, sender_email):
         """
-        Search for all messages from a specific sender
+        Search for all messages from a specific sender (in any location)
         
         Args:
             sender_email: Email address to search for
@@ -87,17 +87,20 @@ class GmailAPI:
             list: Message IDs
         """
         try:
+            # Search ALL locations (inbox, labels, archive) - not just inbox
             query = f'from:{sender_email}'
-            print(f"DEBUG: Searching for messages from: {sender_email}")
+            print(f"DEBUG: Searching for messages from: {sender_email} (in all locations)")
             
             all_messages = []
             page_token = None
             
             while True:
                 # Search with pagination
+                # includeSpamTrash=False means we skip spam/trash but search everywhere else
                 results = self.service.users().messages().list(
                     userId='me',
                     q=query,
+                    includeSpamTrash=False,  # Don't search spam/trash
                     pageToken=page_token
                 ).execute()
                 
@@ -109,13 +112,164 @@ class GmailAPI:
                     break
             
             message_ids = [msg['id'] for msg in all_messages]
-            print(f"DEBUG: Found {len(message_ids)} messages from {sender_email}")
+            print(f"DEBUG: Found {len(message_ids)} messages from {sender_email} (searched all locations)")
             
             return message_ids
             
         except Exception as e:
             print(f"DEBUG: Error searching messages: {e}")
             return []
+    
+    def list_messages(self, days=7, max_results=1000):
+        """
+        List messages from inbox within date range
+        
+        Args:
+            days: Number of days to look back (or 'first' for oldest 100)
+            max_results: Maximum number of messages to return
+            
+        Returns:
+            list: Message IDs with metadata
+        """
+        try:
+            # Build query based on days
+            if days == 'first':
+                # Get oldest 100 messages
+                query = ''
+                max_results = 100
+                print(f"DEBUG: Listing first {max_results} messages (oldest)")
+            else:
+                # Calculate date for query
+                from datetime import datetime, timedelta
+                days_int = int(days)
+                since_date = datetime.now() - timedelta(days=days_int)
+                # Gmail API uses format: after:YYYY/MM/DD
+                date_str = since_date.strftime('%Y/%m/%d')
+                query = f'after:{date_str}'
+                print(f"DEBUG: Listing messages after {date_str}")
+            
+            all_messages = []
+            page_token = None
+            
+            while len(all_messages) < max_results:
+                # List messages with pagination
+                results = self.service.users().messages().list(
+                    userId='me',
+                    q=query,
+                    maxResults=min(500, max_results - len(all_messages)),  # API max is 500 per page
+                    pageToken=page_token,
+                    includeSpamTrash=False
+                ).execute()
+                
+                messages = results.get('messages', [])
+                if not messages:
+                    break
+                
+                all_messages.extend(messages)
+                
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+                
+                # If we're getting "first" emails, stop after first page
+                if days == 'first':
+                    break
+            
+            # Limit to max_results
+            if len(all_messages) > max_results:
+                all_messages = all_messages[:max_results]
+            
+            print(f"DEBUG: Found {len(all_messages)} messages")
+            
+            return all_messages
+            
+        except Exception as e:
+            print(f"DEBUG: Error listing messages: {e}")
+            return []
+    
+    def get_message_details(self, message_id):
+        """
+        Get detailed information about a specific message
+        
+        Args:
+            message_id: Gmail message ID
+            
+        Returns:
+            dict: Message details (sender, date, subject, flags, size, etc.)
+        """
+        try:
+            # Get message with metadata and headers
+            message = self.service.users().messages().get(
+                userId='me',
+                id=message_id,
+                format='metadata',  # Just headers, not full body
+                metadataHeaders=['From', 'To', 'Subject', 'Date', 'List-Unsubscribe']
+            ).execute()
+            
+            # Extract headers
+            headers = {h['name']: h['value'] for h in message.get('payload', {}).get('headers', [])}
+            
+            # Parse sender info
+            from_header = headers.get('From', '')
+            sender_name, sender_email = self._parse_sender(from_header)
+            
+            # Get flags/labels
+            labels = message.get('labelIds', [])
+            is_unread = 'UNREAD' in labels
+            
+            # Get date
+            internal_date = int(message.get('internalDate', 0))
+            from datetime import datetime
+            date_received = datetime.fromtimestamp(internal_date / 1000)
+            
+            # Get size
+            size_estimate = message.get('sizeEstimate', 0)
+            
+            # Check for unsubscribe header
+            has_unsubscribe = bool(headers.get('List-Unsubscribe'))
+            
+            return {
+                'message_id': message_id,
+                'sender_name': sender_name,
+                'sender_email': sender_email,
+                'subject': headers.get('Subject', ''),
+                'date_received': date_received,
+                'is_unread': is_unread,
+                'size': size_estimate,
+                'has_unsubscribe': has_unsubscribe
+            }
+            
+        except Exception as e:
+            print(f"DEBUG: Error getting message {message_id}: {e}")
+            return None
+    
+    def _parse_sender(self, from_header):
+        """
+        Parse sender name and email from From header
+        
+        Args:
+            from_header: Email From header (e.g. "John Doe <john@example.com>")
+            
+        Returns:
+            tuple: (sender_name, sender_email)
+        """
+        import re
+        
+        # Pattern: "Name" <email@domain.com> or Name <email@domain.com> or just email@domain.com
+        match = re.match(r'^"?([^"<]+)"?\s*<([^>]+)>$', from_header.strip())
+        if match:
+            name = match.group(1).strip()
+            email = match.group(2).strip().lower()
+            return (name, email)
+        
+        # Just email address
+        match = re.match(r'^([^\s@]+@[^\s@]+)$', from_header.strip())
+        if match:
+            email = match.group(1).strip().lower()
+            return (email, email)
+        
+        # Fallback
+        return (from_header, from_header.lower())
     
     def move_messages_to_label(self, message_ids, label_id, remove_from_inbox=True):
         """
@@ -231,16 +385,27 @@ class GmailAPI:
                     total_moved += move_result.get('moved_count', 0)
                     total_failed += move_result.get('failed_count', 0)
             
-                filter_result = self.create_gmail_filter(sender_email, label_id)
-                filters_created += 1
-
+            # Create filters for future emails from each sender
+            filters_created = 0
+            for sender_email in sender_emails:
+                try:
+                    filter_result = self.create_gmail_filter(sender_email, label_id)
+                    if filter_result:
+                        filters_created += 1
+                        print(f"DEBUG: Created filter for {sender_email}")
+                except Exception as e:
+                    print(f"DEBUG: Failed to create filter for {sender_email}: {e}")
+                    # Don't fail the whole operation if filter creation fails
+                    continue
+            
             return {
                 'success': True,
                 'message': f"Successfully moved {total_moved} emails to {folder_name}",
                 'emails_moved': total_moved,
                 'failed_count': total_failed,
                 'folder_created': folder_name,
-                'label_id': label_id
+                'label_id': label_id,
+                'filters_created': filters_created
             }
             
         except Exception as e:

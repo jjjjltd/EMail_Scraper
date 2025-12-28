@@ -139,156 +139,219 @@ def check_unsubscribe(email_msg):
     return False
 
 def analyze_emails_oauth(email_address, access_token, provider, days):
-    """Connect to IMAP using OAuth and analyze emails"""
+    """Analyze emails using Gmail API (Google) or IMAP (Microsoft)"""
     
     try:
-        # Determine IMAP server
+        # Use Gmail API for Google (more reliable than IMAP)
         if provider == 'google':
-            imap_server = 'imap.gmail.com'
-        elif provider == 'microsoft':
-            imap_server = 'imap-mail.outlook.com'
-        else:
-            return {'error': 'Unknown provider'}
-        
-        # Connect to IMAP server
-        mail = imaplib.IMAP4_SSL(imap_server)
-        
-        # Authenticate with OAuth - different methods for different providers
-        if provider == 'google':
-            # Gmail XOAUTH2 format
-            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+            print("DEBUG: Using Gmail API for analysis")
             
-            def get_auth(challenge):
-                return auth_string.encode('utf-8')
+            # Initialize Gmail API
+            gmail = GmailAPI(access_token)
             
-            mail.authenticate('XOAUTH2', get_auth)
+            # List messages
+            messages = gmail.list_messages(days=days, max_results=MAX_EMAILS)
+            total_emails = len(messages)
             
-        elif provider == 'microsoft':
-            # Microsoft IMAP XOAUTH2 format
-            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+            if days == 'first':
+                days_display = "first day"
+            else:
+                days_display = int(days)
             
-            def get_auth(challenge):
-                return auth_string.encode('utf-8')
+            limited = total_emails >= MAX_EMAILS
             
-            mail.authenticate('XOAUTH2', get_auth)
-        
-        # Select inbox
-        mail.select('INBOX')
-        
-        # Handle "first day" option
-        if days == 'first':
-            # Get ALL emails, take oldest 100
-            status, messages = mail.search(None, 'ALL')
-            if status != 'OK':
-                return {'error': 'Failed to search emails'}
-            email_ids = messages[0].split()
-            if email_ids:
-                email_ids = email_ids[:100]  # First 100 emails ever
-            total_emails = len(email_ids)
-            days_display = "first day"
-        else:
-            # Calculate date range
-            days_int = int(days)
-            since_date = (datetime.now() - timedelta(days=days_int)).strftime("%d-%b-%Y")
+            # Track senders
+            sender_data = defaultdict(lambda: {
+                'sender_name': '',
+                'sender_email': '',
+                'organization': '',
+                'count': 0,
+                'total_size': 0,
+                'last_received': None,
+                'read_count': 0,
+                'unread_count': 0,
+                'has_unsubscribe': False
+            })
             
-            # Search for emails in date range
-            status, messages = mail.search(None, f'SINCE {since_date}')
+            # Process messages
+            start_time = datetime.now()
             
-            if status != 'OK':
-                return {'error': 'Failed to search emails'}
-            
-            email_ids = messages[0].split()
-            total_emails = len(email_ids)
-            days_display = days_int
-        
-        # Apply limit
-        if total_emails > MAX_EMAILS:
-            email_ids = email_ids[-MAX_EMAILS:]  # Get most recent
-            limited = True
-        else:
-            limited = False
-        
-        # Track senders
-        sender_data = defaultdict(lambda: {
-            'sender_name': '',
-            'sender_email': '',
-            'organization': '',
-            'count': 0,
-            'total_size': 0,
-            'last_received': None,
-            'read_count': 0,
-            'unread_count': 0,
-            'has_unsubscribe': False
-        })
-        
-        # Process emails
-        start_time = datetime.now()
-        
-        for idx, email_id in enumerate(email_ids):
-            # Check timeout
-            if (datetime.now() - start_time).seconds > MAX_TIME_SECONDS:
-                break
+            for idx, msg in enumerate(messages):
+                # Check timeout
+                if (datetime.now() - start_time).seconds > MAX_TIME_SECONDS:
+                    break
                 
-            try:
-                # FIX #1: Use BODY.PEEK[] to avoid marking as read
-                status, msg_data = mail.fetch(email_id, '(BODY.PEEK[] FLAGS)')
+                try:
+                    # Get message details
+                    details = gmail.get_message_details(msg['id'])
+                    if not details:
+                        continue
+                    
+                    sender_email = details['sender_email']
+                    sender_name = details['sender_name']
+                    organization = get_organization(sender_email)
+                    
+                    # Update sender data
+                    key = sender_email.lower()
+                    data = sender_data[key]
+                    data['sender_name'] = sender_name
+                    data['sender_email'] = sender_email
+                    data['organization'] = organization
+                    data['count'] += 1
+                    data['total_size'] += details['size']
+                    
+                    if data['last_received'] is None or details['date_received'] > data['last_received']:
+                        data['last_received'] = details['date_received']
+                    
+                    if details['is_unread']:
+                        data['unread_count'] += 1
+                    else:
+                        data['read_count'] += 1
+                    
+                    if details['has_unsubscribe']:
+                        data['has_unsubscribe'] = True
+                    
+                except Exception as e:
+                    print(f"DEBUG: Error processing message {msg.get('id')}: {e}")
+                    continue
+        
+        # Use IMAP for Microsoft
+        elif provider == 'microsoft':
+            print("DEBUG: Using IMAP for Microsoft analysis")
+            
+            imap_server = 'imap-mail.outlook.com'
+            
+            # Connect to IMAP server
+            mail = imaplib.IMAP4_SSL(imap_server)
+            
+            # Authenticate with OAuth
+            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
+            
+            def get_auth(challenge):
+                return auth_string.encode('utf-8')
+            
+            mail.authenticate('XOAUTH2', get_auth)
+            
+            # Select inbox
+            mail.select('INBOX')
+            
+            # Handle "first day" option
+            if days == 'first':
+                # Get ALL emails, take oldest 100
+                status, messages = mail.search(None, 'ALL')
+                if status != 'OK':
+                    return {'error': 'Failed to search emails'}
+                email_ids = messages[0].split()
+                if email_ids:
+                    email_ids = email_ids[:100]  # First 100 emails ever
+                total_emails = len(email_ids)
+                days_display = "first day"
+            else:
+                # Calculate date range
+                days_int = int(days)
+                since_date = (datetime.now() - timedelta(days=days_int)).strftime("%d-%b-%Y")
+                
+                # Search for emails in date range
+                status, messages = mail.search(None, f'SINCE {since_date}')
                 
                 if status != 'OK':
-                    continue
+                    return {'error': 'Failed to search emails'}
                 
-                # Parse email
-                raw_email = msg_data[0][1]
-                email_msg = email.message_from_bytes(raw_email)
-                
-                # Get flags
-                flags = msg_data[0][0].decode()
-                is_read = '\\Seen' in flags
-                
-                # Extract sender info
-                from_header = decode_mime_words(email_msg.get('From', ''))
-                sender_name, sender_email = extract_sender_info(from_header)
-                organization = get_organization(sender_email)
-                
-                # Get date
-                date_header = email_msg.get('Date', '')
+                email_ids = messages[0].split()
+                total_emails = len(email_ids)
+                days_display = days_int
+            
+            # Apply limit
+            if total_emails > MAX_EMAILS:
+                email_ids = email_ids[-MAX_EMAILS:]  # Get most recent
+                limited = True
+            else:
+                limited = False
+            
+            # Track senders
+            sender_data = defaultdict(lambda: {
+                'sender_name': '',
+                'sender_email': '',
+                'organization': '',
+                'count': 0,
+                'total_size': 0,
+                'last_received': None,
+                'read_count': 0,
+                'unread_count': 0,
+                'has_unsubscribe': False
+            })
+            
+            # Process emails
+            start_time = datetime.now()
+            
+            for idx, email_id in enumerate(email_ids):
+                # Check timeout
+                if (datetime.now() - start_time).seconds > MAX_TIME_SECONDS:
+                    break
+                    
                 try:
-                    email_date = email.utils.parsedate_to_datetime(date_header)
-                except:
-                    email_date = datetime.now()
-                
-                # Get size (approximate)
-                email_size = len(raw_email)
-                
-                # Check for unsubscribe
-                has_unsubscribe = check_unsubscribe(email_msg)
-                
-                # Update sender data
-                key = sender_email.lower()
-                data = sender_data[key]
-                data['sender_name'] = sender_name
-                data['sender_email'] = sender_email
-                data['organization'] = organization
-                data['count'] += 1
-                data['total_size'] += email_size
-                
-                if data['last_received'] is None or email_date > data['last_received']:
-                    data['last_received'] = email_date
-                
-                if is_read:
-                    data['read_count'] += 1
-                else:
-                    data['unread_count'] += 1
-                
-                if has_unsubscribe:
-                    data['has_unsubscribe'] = True
-                
-            except Exception as e:
-                print(f"Error processing email {email_id}: {e}")
-                continue
+                    # Use BODY.PEEK[] to avoid marking as read
+                    status, msg_data = mail.fetch(email_id, '(BODY.PEEK[] FLAGS)')
+                    
+                    if status != 'OK':
+                        continue
+                    
+                    # Parse email
+                    raw_email = msg_data[0][1]
+                    email_msg = email.message_from_bytes(raw_email)
+                    
+                    # Get flags
+                    flags = msg_data[0][0].decode()
+                    is_read = '\\Seen' in flags
+                    
+                    # Extract sender info
+                    from_header = decode_mime_words(email_msg.get('From', ''))
+                    sender_name, sender_email = extract_sender_info(from_header)
+                    organization = get_organization(sender_email)
+                    
+                    # Get date
+                    date_header = email_msg.get('Date', '')
+                    try:
+                        email_date = email.utils.parsedate_to_datetime(date_header)
+                    except:
+                        email_date = datetime.now()
+                    
+                    # Get size (approximate)
+                    email_size = len(raw_email)
+                    
+                    # Check for unsubscribe
+                    has_unsubscribe = check_unsubscribe(email_msg)
+                    
+                    # Update sender data
+                    key = sender_email.lower()
+                    data = sender_data[key]
+                    data['sender_name'] = sender_name
+                    data['sender_email'] = sender_email
+                    data['organization'] = organization
+                    data['count'] += 1
+                    data['total_size'] += email_size
+                    
+                    if data['last_received'] is None or email_date > data['last_received']:
+                        data['last_received'] = email_date
+                    
+                    if is_read:
+                        data['read_count'] += 1
+                    else:
+                        data['unread_count'] += 1
+                    
+                    if has_unsubscribe:
+                        data['has_unsubscribe'] = True
+                    
+                except Exception as e:
+                    print(f"Error processing email {email_id}: {e}")
+                    continue
+            
+            # Close IMAP connection
+            mail.close()
+            mail.logout()
         
-        # Close connection
-        mail.close()
-        mail.logout()
+        else:
+            return {'error': 'Unknown provider'}
         
         # Convert to list and calculate metrics
         results = []
@@ -638,13 +701,21 @@ def action_create_folder():
             # Gmail API doesn't need IMAP connection
             result = EmailActions.create_folder_gmail(access_token, sender_emails, folder_name)
             
-            # Gmail API handles label creation, so no separate rule needed
-            # But inform user about creating filters manually if desired
-            rule_result = {
-                'success': False,
-                'message': 'Gmail filters can be created manually in Gmail settings',
-                'manual_instructions': f'Optional: Create filter FROM {", ".join(sender_emails)} → Move to {folder_name}'
-            }
+            # Gmail API handles both label creation and filter creation
+            filters_created = result.get('filters_created', 0)
+            
+            if filters_created > 0:
+                rule_result = {
+                    'success': True,
+                    'message': f'Created {filters_created} automatic filter(s) - future emails will go straight to {folder_name}',
+                    'manual_instructions': None
+                }
+            else:
+                rule_result = {
+                    'success': False,
+                    'message': 'Filters could not be created automatically',
+                    'manual_instructions': f'Optional: Create filter FROM {", ".join(sender_emails)} → Move to {folder_name}'
+                }
             
             response = {
                 'success': result['success'],
@@ -652,9 +723,10 @@ def action_create_folder():
                 'emails_moved': result.get('emails_moved', 0),
                 'failed_count': result.get('failed_count', 0),
                 'folder_created': result.get('folder_created'),
-                'rule_created': False,
+                'rule_created': filters_created > 0,
                 'rule_message': rule_result['message'],
-                'manual_instructions': rule_result.get('manual_instructions')
+                'manual_instructions': rule_result.get('manual_instructions'),
+                'filters_created': filters_created
             }
             
             return jsonify(response)
