@@ -135,7 +135,7 @@ class GmailAPI:
             # Build query based on days
             if days == 'first':
                 # Get oldest 100 messages - need to search all then sort
-                query = ''
+                query = f'in:inbox'
                 max_results = 100
                 print(f"DEBUG: Listing first {max_results} messages (oldest)")
                 
@@ -180,7 +180,7 @@ class GmailAPI:
                 since_date = datetime.now() - timedelta(days=days_int)
                 # Gmail API uses format: after:YYYY/MM/DD
                 date_str = since_date.strftime('%Y/%m/%d')
-                query = f'after:{date_str}'
+                query = f'in:inbox after:{date_str}'
                 print(f"DEBUG: Listing messages after {date_str}")
             
             all_messages = []
