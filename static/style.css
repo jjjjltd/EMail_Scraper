@@ -281,6 +281,24 @@ h2 {
     color: var(--text-dark);
 }
 
+.results-table {
+    width: 100%;
+    table-layout: fixed;
+    /* Forces columns to respect container width */
+}
+
+.results-table th,
+.results-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.results-table td:nth-child(2),
+.results-table td:nth-child(3) {
+    white-space: normal;
+}
+
 /* Warnings & Badges */
 .warning-box {
     background: #fef3c7;
@@ -342,6 +360,13 @@ h2 {
     overflow-x: auto;
     border: 1px solid var(--border-gray);
     border-radius: 6px;
+    max-width: 100%;
+    width: 100%;
+}
+
+.table-wrapper table {
+    width: 100%;
+    table-layout: fixed;
 }
 
 table {

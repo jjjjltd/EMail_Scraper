@@ -135,7 +135,7 @@ class GmailAPI:
             # Build query based on days
             if days == 'first':
                 # Get oldest 100 messages - need to search all then sort
-                query = 'in:inbox'
+                query = ''
                 max_results = 100
                 print(f"DEBUG: Listing first {max_results} messages (oldest)")
                 
@@ -180,7 +180,7 @@ class GmailAPI:
                 since_date = datetime.now() - timedelta(days=days_int)
                 # Gmail API uses format: after:YYYY/MM/DD
                 date_str = since_date.strftime('%Y/%m/%d')
-                query = f'in:inbox after:{date_str}'
+                query = f'after:{date_str}'
                 print(f"DEBUG: Listing messages after {date_str}")
             
             all_messages = []
@@ -488,3 +488,166 @@ class GmailAPI:
                 'emails_moved': 0,
                 'folder_created': None
             }
+    
+    def manage_history(self, sender_emails, folder_name, keep_days, archive_days, delete_days, preview_only=False):
+        """
+        Manage email retention for selected senders with three-tier policy
+        
+        Args:
+            sender_emails: List of sender email addresses
+            folder_name: Base folder name (will create Archive-{folder_name})
+            keep_days: Days to keep in inbox (e.g., 7)
+            archive_days: Days to keep in archive before delete (e.g., 60)
+            delete_days: Days after which to delete (e.g., 60+)
+            preview_only: If True, only return counts without taking action
+            
+        Returns:
+            dict: {
+                'success': bool,
+                'preview': {
+                    'keep_count': int,
+                    'archive_count': int,
+                    'delete_count': int
+                },
+                'executed': {
+                    'archived': int,
+                    'deleted': int
+                } if not preview_only
+            }
+        """
+        from datetime import datetime, timedelta
+        
+        try:
+            # Support single sender
+            if isinstance(sender_emails, str):
+                sender_emails = [sender_emails]
+            
+            # Calculate date boundaries
+            now = datetime.now()
+            keep_cutoff = now - timedelta(days=keep_days)
+            archive_cutoff = now - timedelta(days=archive_days)
+            delete_cutoff = now - timedelta(days=delete_days)
+            
+            print(f"DEBUG: Manage History - Keep: {keep_days}d, Archive: {archive_days}d, Delete: {delete_days}d")
+            print(f"DEBUG: Date boundaries - Keep after: {keep_cutoff.strftime('%Y/%m/%d')}, Delete before: {delete_cutoff.strftime('%Y/%m/%d')}")
+            
+            # Collect message IDs by category
+            keep_messages = []
+            archive_messages = []
+            delete_messages = []
+            
+            for sender_email in sender_emails:
+                print(f"DEBUG: Processing sender: {sender_email}")
+                
+                # Get ALL messages from sender
+                all_messages = self.search_messages(sender_email)
+                
+                # Categorize by date
+                for msg_id in all_messages:
+                    try:
+                        # Get message date
+                        msg = self.service.users().messages().get(
+                            userId='me',
+                            id=msg_id,
+                            format='minimal',
+                            fields='internalDate'
+                        ).execute()
+                        
+                        msg_date = datetime.fromtimestamp(int(msg['internalDate']) / 1000)
+                        
+                        # Categorize
+                        if msg_date >= keep_cutoff:
+                            # Recent - keep in inbox
+                            keep_messages.append(msg_id)
+                        elif msg_date >= delete_cutoff:
+                            # Middle age - archive
+                            archive_messages.append(msg_id)
+                        else:
+                            # Old - delete
+                            delete_messages.append(msg_id)
+                    
+                    except Exception as e:
+                        print(f"DEBUG: Error checking message {msg_id}: {e}")
+                        continue
+            
+            preview = {
+                'keep_count': len(keep_messages),
+                'archive_count': len(archive_messages),
+                'delete_count': len(delete_messages)
+            }
+            
+            print(f"DEBUG: Preview - Keep: {preview['keep_count']}, Archive: {preview['archive_count']}, Delete: {preview['delete_count']}")
+            
+            # If preview only, return counts
+            if preview_only:
+                return {
+                    'success': True,
+                    'preview': preview,
+                    'message': f"Found {preview['keep_count']} to keep, {preview['archive_count']} to archive, {preview['delete_count']} to delete"
+                }
+            
+            # Execute moves/deletes
+            archived_count = 0
+            deleted_count = 0
+            
+            # 1. Archive emails (if any)
+            if archive_messages:
+                archive_label_name = f"Archive-{folder_name}"
+                
+                # Create archive label
+                label_result = self.create_label(archive_label_name)
+                if not label_result['success']:
+                    return {
+                        'success': False,
+                        'message': f"Failed to create archive label: {label_result['message']}"
+                    }
+                
+                archive_label_id = label_result['label_id']
+                
+                # Move to archive
+                move_result = self.move_messages_to_label(
+                    archive_messages,
+                    archive_label_id,
+                    remove_from_inbox=True
+                )
+                archived_count = move_result.get('moved_count', 0)
+                print(f"DEBUG: Archived {archived_count} messages")
+            
+            # 2. Delete emails (move to trash)
+            if delete_messages:
+                for msg_id in delete_messages:
+                    try:
+                        self.service.users().messages().trash(
+                            userId='me',
+                            id=msg_id
+                        ).execute()
+                        deleted_count += 1
+                        
+                        if deleted_count % 50 == 0:
+                            print(f"DEBUG: Deleted {deleted_count}/{len(delete_messages)} messages")
+                    
+                    except Exception as e:
+                        print(f"DEBUG: Error deleting message {msg_id}: {e}")
+                        continue
+                
+                print(f"DEBUG: Deleted {deleted_count} messages to trash")
+            
+            return {
+                'success': True,
+                'preview': preview,
+                'executed': {
+                    'archived': archived_count,
+                    'deleted': deleted_count
+                },
+                'message': f"Archived {archived_count} emails, deleted {deleted_count} emails to trash"
+            }
+        
+        except Exception as e:
+            import traceback
+            print(f"DEBUG: Error in manage_history: {e}")
+            print(traceback.format_exc())
+            return {
+                'success': False,
+                'message': f"Error: {str(e)}"
+            }
+

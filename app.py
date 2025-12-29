@@ -782,6 +782,80 @@ def action_create_folder():
         print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
+@app.route('/action/manage-history', methods=['POST'])
+def action_manage_history():
+    """Handle Manage History action"""
+    
+    # Check if feature is enabled
+    if not is_action_enabled('manage_history'):
+        return jsonify({'success': False, 'message': 'Manage History feature is not enabled'})
+    
+    # Get session data
+    email_address = session.get('email')
+    access_token = session.get('access_token')
+    provider = session.get('provider')
+    
+    if not email_address or not access_token:
+        return jsonify({'success': False, 'message': 'Not authenticated. Please log in again.'})
+    
+    # Get request data
+    data = request.get_json()
+    sender_emails = data.get('sender_emails', [])
+    folder_name = data.get('folder_name')
+    keep_days = data.get('keep_days')
+    archive_days = data.get('archive_days')
+    delete_days = data.get('delete_days')
+    preview_only = data.get('preview_only', False)
+    
+    if not sender_emails or not folder_name:
+        return jsonify({'success': False, 'message': 'Missing required parameters'})
+    
+    if keep_days is None or archive_days is None or delete_days is None:
+        return jsonify({'success': False, 'message': 'Missing date period parameters'})
+    
+    try:
+        keep_days = int(keep_days)
+        archive_days = int(archive_days)
+        delete_days = int(delete_days)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Date periods must be numbers'})
+    
+    # Validate logic: keep < archive < delete
+    if not (keep_days < archive_days <= delete_days):
+        return jsonify({'success': False, 'message': 'Invalid date periods: keep < archive <= delete'})
+    
+    print(f"DEBUG: Manage history for {len(sender_emails)} sender(s), preview={preview_only}")
+    
+    try:
+        # Use Gmail API for Google
+        if provider == 'google':
+            print("DEBUG: Using Gmail API for manage history")
+            
+            gmail = GmailAPI(access_token)
+            result = gmail.manage_history(
+                sender_emails,
+                folder_name,
+                keep_days,
+                archive_days,
+                delete_days,
+                preview_only
+            )
+            
+            return jsonify(result)
+        
+        # IMAP for Microsoft (future implementation)
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Manage History not yet implemented for Microsoft'
+            })
+        
+    except Exception as e:
+        import traceback
+        print(f"DEBUG: Error in manage_history action: {e}")
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
 def open_browser():
     """Open browser after short delay"""
     webbrowser.open('http://127.0.0.1:5000')
