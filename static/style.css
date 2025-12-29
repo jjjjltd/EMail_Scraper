@@ -44,10 +44,6 @@ body {
     overflow: hidden;
 }
 
-.container.wide {
-    max-width: 1200px;
-}
-
 /* Header */
 header {
     background: var(--primary-blue);
@@ -287,17 +283,14 @@ h2 {
     /* Forces columns to respect container width */
 }
 
-.results-table th,
+/* Unsubscribe */
+
 .results-table td {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.results-table td:nth-child(2),
-.results-table td:nth-child(3) {
-    white-space: normal;
-}
 
 /* Warnings & Badges */
 .warning-box {
@@ -332,7 +325,7 @@ h2 {
 }
 
 .action-button {
-    background: none;
+    background: rgba(37, 99, 235, 0.05);
     border: none;
     color: var(--text-dark);
     padding: 0.5rem 1rem;
@@ -357,7 +350,7 @@ h2 {
 
 /* Table Styles */
 .table-wrapper {
-    overflow-x: auto;
+    overflow-x: hidden;
     border: 1px solid var(--border-gray);
     border-radius: 6px;
     max-width: 100%;
@@ -713,4 +706,92 @@ input[type="checkbox"] {
 
 .progress-message.active {
     display: block;
+}
+
+/* RESULTS TABLE - FIXED COLUMN WIDTHS */
+#resultsTable {
+    width: 100% !important;
+    table-layout: fixed !important;
+}
+
+#resultsTable th:nth-child(1),
+#resultsTable td:nth-child(1) {
+    width: 40px !important;
+}
+
+#resultsTable th:nth-child(2),
+#resultsTable td:nth-child(2) {
+    width: 150px !important;
+}
+
+#resultsTable th:nth-child(3),
+#resultsTable td:nth-child(3) {
+    width: 120px !important;
+}
+
+#resultsTable th:nth-child(4),
+#resultsTable td:nth-child(4) {
+    width: 60px !important;
+}
+
+#resultsTable th:nth-child(5),
+#resultsTable td:nth-child(5) {
+    width: 80px !important;
+}
+
+#resultsTable th:nth-child(6),
+#resultsTable td:nth-child(6) {
+    width: 120px !important;
+}
+
+#resultsTable th:nth-child(7),
+#resultsTable td:nth-child(7) {
+    width: 80px !important;
+}
+
+#resultsTable th:nth-child(8),
+#resultsTable td:nth-child(8) {
+    width: 70px !important;
+}
+
+#resultsTable th:nth-child(9),
+#resultsTable td:nth-child(9) {
+    width: 80px !important;
+}
+
+#resultsTable th:nth-child(10),
+#resultsTable td:nth-child(10) {
+    width: 90px !important;
+}
+
+#resultsTable th,
+#resultsTable td {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+/* WIDEN RESULTS TABLE CONTAINER */
+.container.wide {
+    max-width: 90% !important;
+    /* Was 1200px, now 90% of viewport */
+}
+
+@media (min-width: 1400px) {
+    .container.wide {
+        max-width: 1400px !important;
+        /* Cap at 1400px on very large screens */
+    }
+
+    /* FORCE WIDER TABLE - ABSOLUTE OVERRIDE */
+    body .container.wide {
+        max-width: 80vw !important;
+        margin: 0 auto !important;
+    }
+
+    @media (min-width: 1600px) {
+        body .container.wide {
+            max-width: 1400px !important;
+        }
+    }
 }
