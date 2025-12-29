@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Results - Email Scraper</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 <body>
     <div class="container">
         <header>
@@ -35,7 +33,7 @@
                 <h2>📊 Analysis Results</h2>
                 <div class="results-summary">
                     <strong>{{ total_emails }}</strong> emails from <strong>{{ total_senders }}</strong> senders
-                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed|int > 1 %}s{% endif %} period)
+                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed > 1 %}s{% endif %} period)
                 </div>
             </div>
 
@@ -45,25 +43,25 @@
                     🚫 Unsubscribe
                 </button>
                 {% endif %}
-
+                
                 {% if features.create_folder %}
                 <button class="action-button" id="createFolderBtn" onclick="handleCreateFolder()" disabled>
                     📁 Create Folder
                 </button>
                 {% endif %}
-
+                
                 {% if features.manage_history %}
                 <button class="action-button" id="manageHistoryBtn" onclick="handleManageHistory()" disabled>
                     🗃️ Manage History
                 </button>
                 {% endif %}
-
+                
                 {% if features.delete_all %}
                 <button class="action-button" id="deleteAllBtn" onclick="handleDeleteAll()" disabled>
                     🗑️ Delete All
                 </button>
                 {% endif %}
-
+                
                 {% if features.archive %}
                 <button class="action-button" id="archiveBtn" onclick="handleArchive()" disabled>
                     📦 Archive
@@ -121,8 +119,9 @@
                         {% for sender in senders %}
                         <tr data-sender="{{ sender.sender_email }}">
                             <td class="checkbox-cell">
-                                <input type="checkbox" class="sender-checkbox" data-email="{{ sender.sender_email }}"
-                                    onchange="updateSelection()">
+                                <input type="checkbox" class="sender-checkbox" 
+                                       data-email="{{ sender.sender_email }}" 
+                                       onchange="updateSelection()">
                             </td>
                             <td>{{ sender.sender_name }}</td>
                             <td>{{ sender.organization }}</td>
@@ -133,8 +132,7 @@
                             <td>{{ sender.unread_pct }}%</td>
                             <td>{{ sender.nuisance }}</td>
                             <td>
-                                <span
-                                    class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
+                                <span class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
                                     {% if sender.has_unsubscribe %}Yes{% else %}No{% endif %}
                                 </span>
                             </td>
@@ -187,20 +185,13 @@
 
         function updateActionButtons() {
             const hasSelection = selectedSenders.size > 0;
-
-            // Only update buttons that exist (feature flags may hide some)
-            const unsubscribeBtn = document.getElementById('unsubscribeBtn');
-            const createFolderBtn = document.getElementById('createFolderBtn');
-            const manageHistoryBtn = document.getElementById('manageHistoryBtn');
-            const deleteAllBtn = document.getElementById('deleteAllBtn');
-            const archiveBtn = document.getElementById('archiveBtn');
-
-            if (unsubscribeBtn) unsubscribeBtn.disabled = !hasSelection;
-            if (createFolderBtn) createFolderBtn.disabled = !hasSelection;
-            if (manageHistoryBtn) manageHistoryBtn.disabled = !hasSelection;
-            if (deleteAllBtn) deleteAllBtn.disabled = !hasSelection;
-            if (archiveBtn) archiveBtn.disabled = !hasSelection;
+            document.getElementById('unsubscribeBtn').disabled = !hasSelection;
+            document.getElementById('createFolderBtn').disabled = !hasSelection;
+            document.getElementById('manageHistoryBtn').disabled = !hasSelection;
+            document.getElementById('deleteAllBtn').disabled = !hasSelection;
+            document.getElementById('archiveBtn').disabled = !hasSelection;
         }
+
         function handleUnsubscribe() {
             alert(`Unsubscribe feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
         }
@@ -208,11 +199,11 @@
         function handleCreateFolder() {
             const count = selectedSenders.size;
             if (count === 0) return;
-
+            
             // Get all selected senders
             const senderEmails = Array.from(selectedSenders);
             const senderNames = [];
-
+            
             // Collect sender names
             senderEmails.forEach(email => {
                 const row = document.querySelector(`tr[data-sender="${email}"]`);
@@ -221,23 +212,23 @@
                     senderNames.push(name);
                 }
             });
-
+            
             if (senderNames.length === 0) {
                 alert('Error: Could not find sender information');
                 return;
             }
-
+            
             // Default folder name: first 5 chars of first sender
             const defaultFolderName = senderNames[0].substring(0, 5).replace(/[^a-zA-Z0-9]/g, '');
-
+            
             // Show modal with folder name prompt
             showCreateFolderModal(senderEmails, senderNames, defaultFolderName);
         }
-
+        
         function showCreateFolderModal(senderEmails, senderNames, defaultFolderName) {
             const senderCount = senderEmails.length;
             const senderList = senderNames.join(', ');
-
+            
             // Create modal HTML
             const modalHTML = `
                 <div class="modal-overlay active" id="createFolderModal">
@@ -263,16 +254,16 @@
                     </div>
                 </div>
             `;
-
+            
             // Add to page
             document.body.insertAdjacentHTML('beforeend', modalHTML);
-
+            
             // Focus input
             document.getElementById('folderName').focus();
             document.getElementById('folderName').select();
-
+            
             // Handle "Next: Count Emails" button
-            document.getElementById('confirmCalculate').addEventListener('click', function () {
+            document.getElementById('confirmCalculate').addEventListener('click', function() {
                 const folderName = document.getElementById('folderName').value.trim();
                 if (!folderName) {
                     alert('Please enter a folder name');
@@ -281,26 +272,26 @@
                 // Start calculation phase
                 calculateEmailCount(senderEmails, folderName);
             });
-
+            
             // Handle Enter key
-            document.getElementById('folderName').addEventListener('keypress', function (e) {
+            document.getElementById('folderName').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     document.getElementById('confirmCalculate').click();
                 }
             });
         }
-
+        
         function calculateEmailCount(senderEmails, folderName) {
             const confirmBtn = document.getElementById('confirmCalculate');
             const cancelBtn = document.querySelector('.btn-cancel');
-
+            
             // Disable buttons during calculation
             confirmBtn.disabled = true;
             cancelBtn.disabled = true;
             confirmBtn.textContent = 'Calculating...';
-
+            
             showProgress('🔍 Counting all emails over all time...');
-
+            
             // Call backend to count emails
             fetch('/action/count-emails', {
                 method: 'POST',
@@ -311,27 +302,27 @@
                     sender_emails: senderEmails
                 })
             })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Show confirmation with total count
-                        showConfirmDialog(senderEmails, folderName, data.total_emails, data.sender_count);
-                    } else {
-                        showProgress(`❌ Error: ${data.message}`);
-                        confirmBtn.disabled = false;
-                        cancelBtn.disabled = false;
-                        confirmBtn.textContent = 'Next: Count Emails';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showProgress(`❌ Error: ${error.message}`);
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show confirmation with total count
+                    showConfirmDialog(senderEmails, folderName, data.total_emails, data.sender_count);
+                } else {
+                    showProgress(`❌ Error: ${data.message}`);
                     confirmBtn.disabled = false;
                     cancelBtn.disabled = false;
                     confirmBtn.textContent = 'Next: Count Emails';
-                });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showProgress(`❌ Error: ${error.message}`);
+                confirmBtn.disabled = false;
+                cancelBtn.disabled = false;
+                confirmBtn.textContent = 'Next: Count Emails';
+            });
         }
-
+        
         function showConfirmDialog(senderEmails, folderName, totalEmails, senderCount) {
             // Update modal to show confirmation
             const modalDialog = document.querySelector('.modal-dialog');
@@ -353,24 +344,24 @@
                     <button class="btn-confirm" id="confirmMove">Move ${totalEmails.toLocaleString()} Emails</button>
                 </div>
             `;
-
+            
             // Handle move confirmation
-            document.getElementById('confirmMove').addEventListener('click', function () {
+            document.getElementById('confirmMove').addEventListener('click', function() {
                 executeCreateFolder(senderEmails, folderName, totalEmails);
             });
         }
-
+        
         function executeCreateFolder(senderEmails, folderName, expectedTotal) {
             const confirmBtn = document.getElementById('confirmMove');
             const cancelBtn = document.querySelector('.btn-cancel');
-
+            
             // Disable buttons
             confirmBtn.disabled = true;
             cancelBtn.disabled = true;
             confirmBtn.textContent = 'Moving...';
-
+            
             showProgress(`📁 Creating folder and moving emails... (0/${expectedTotal.toLocaleString()})`);
-
+            
             // Send request to server
             fetch('/action/create-folder', {
                 method: 'POST',
@@ -382,52 +373,292 @@
                     folder_name: folderName
                 })
             })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showProgress(`✅ Success! Moved ${data.emails_moved.toLocaleString()} emails to "${data.folder_created}"`);
-
-                        setTimeout(() => {
-                            if (data.manual_instructions) {
-                                alert(`${data.message}\n\n⚠️ Email Rule:\n${data.rule_message}\n\nManual step required:\n${data.manual_instructions}`);
-                            } else {
-                                alert(data.message);
-                            }
-                            closeCreateFolderModal();
-                            window.location.reload();
-                        }, 2000);
-                    } else {
-                        showProgress(`❌ Error: ${data.message}`);
-                        confirmBtn.disabled = false;
-                        cancelBtn.disabled = false;
-                        confirmBtn.textContent = 'Move Emails';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showProgress(`❌ Error: ${error.message}`);
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showProgress(`✅ Success! Moved ${data.emails_moved.toLocaleString()} emails to "${data.folder_created}"`);
+                    
+                    setTimeout(() => {
+                        if (data.manual_instructions) {
+                            alert(`${data.message}\n\n⚠️ Email Rule:\n${data.rule_message}\n\nManual step required:\n${data.manual_instructions}`);
+                        } else {
+                            alert(data.message);
+                        }
+                        closeCreateFolderModal();
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    showProgress(`❌ Error: ${data.message}`);
                     confirmBtn.disabled = false;
                     cancelBtn.disabled = false;
                     confirmBtn.textContent = 'Move Emails';
-                });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showProgress(`❌ Error: ${error.message}`);
+                confirmBtn.disabled = false;
+                cancelBtn.disabled = false;
+                confirmBtn.textContent = 'Move Emails';
+            });
         }
-
+        
         function closeCreateFolderModal() {
             const modal = document.getElementById('createFolderModal');
             if (modal) {
                 modal.remove();
             }
         }
-
+        
         function showProgress(message) {
             const progressDiv = document.getElementById('progressMessage');
             progressDiv.textContent = message;
             progressDiv.classList.add('active');
         }
-
+        
 
         function handleManageHistory() {
-            alert(`Manage History feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+            const count = selectedSenders.size;
+            if (count === 0) return;
+            
+            // Get selected sender names for display
+            const senderEmails = Array.from(selectedSenders);
+            const senderNames = [];
+            
+            senderEmails.forEach(email => {
+                const row = document.querySelector(`tr[data-sender="${email}"]`);
+                if (row) {
+                    const name = row.querySelector('td:nth-child(2)').textContent.trim();
+                    senderNames.push(name);
+                }
+            });
+            
+            // Default folder name from first sender
+            const defaultFolderName = senderNames[0].substring(0, 5).replace(/[^a-zA-Z0-9]/g, '');
+            
+            showManageHistoryModal(senderEmails, senderNames, defaultFolderName);
+        }
+        
+        function showManageHistoryModal(senderEmails, senderNames, defaultFolderName) {
+            const senderCount = senderEmails.length;
+            const senderList = senderNames.join(', ');
+            
+            const modalHTML = `
+                <div class="modal-overlay active" id="manageHistoryModal">
+                    <div class="modal-dialog" style="max-width: 600px;">
+                        <div class="modal-header">
+                            <h2>📜 Manage Email History</h2>
+                            <p style="color: var(--text-light); font-size: 0.9rem;">
+                                Selected: <strong>${senderCount} sender(s)</strong>: ${senderList}
+                            </p>
+                        </div>
+                        <div class="modal-body">
+                            <div class="progress-message" id="historyProgressMessage"></div>
+                            
+                            <label for="historyFolderName">Base Folder Name:</label>
+                            <input type="text" id="historyFolderName" value="${defaultFolderName}" placeholder="Enter folder name">
+                            <div class="help-text">Archive folder will be named "Archive-{FolderName}"</div>
+                            
+                            <div style="margin-top: 1.5rem;">
+                                <h3 style="font-size: 1rem; margin-bottom: 1rem;">Retention Policy:</h3>
+                                
+                                <div style="display: grid; gap: 1rem;">
+                                    <div>
+                                        <label for="keepDays">Keep in Inbox (days):</label>
+                                        <input type="number" id="keepDays" value="7" min="0" style="width: 100px;">
+                                        <span style="color: var(--text-light); font-size: 0.85rem; margin-left: 0.5rem;">
+                                            Emails newer than this stay in Inbox
+                                        </span>
+                                    </div>
+                                    
+                                    <div>
+                                        <label for="archiveDays">Archive after (days):</label>
+                                        <input type="number" id="archiveDays" value="30" min="1" style="width: 100px;">
+                                        <span style="color: var(--text-light); font-size: 0.85rem; margin-left: 0.5rem;">
+                                            Emails older than "Keep" move to Archive folder
+                                        </span>
+                                    </div>
+                                    
+                                    <div>
+                                        <label for="deleteDays">Delete after (days):</label>
+                                        <input type="number" id="deleteDays" value="60" min="1" style="width: 100px;">
+                                        <span style="color: var(--text-light); font-size: 0.85rem; margin-left: 0.5rem;">
+                                            Emails older than this move to Trash (recoverable for 30 days)
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin-top: 1.5rem; border-radius: 6px;">
+                                <strong>⚠️ Warning:</strong> Delete moves emails to Trash. Gmail auto-deletes from Trash after 30 days.
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-cancel" onclick="closeManageHistoryModal()">Cancel</button>
+                            <button class="btn-confirm" id="previewHistory" style="background: #3b82f6;">Preview Changes</button>
+                            <button class="btn-confirm" id="executeHistory" style="display: none;">Execute Policy</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            
+            // Focus folder name
+            document.getElementById('historyFolderName').focus();
+            
+            // Handle Preview
+            document.getElementById('previewHistory').addEventListener('click', function() {
+                previewManageHistory(senderEmails);
+            });
+        }
+        
+        function closeManageHistoryModal() {
+            const modal = document.getElementById('manageHistoryModal');
+            if (modal) modal.remove();
+        }
+        
+        function showHistoryProgress(message) {
+            const progressDiv = document.getElementById('historyProgressMessage');
+            if (progressDiv) {
+                progressDiv.textContent = message;
+                progressDiv.classList.add('active');
+            }
+        }
+        
+        function previewManageHistory(senderEmails) {
+            const folderName = document.getElementById('historyFolderName').value.trim();
+            const keepDays = parseInt(document.getElementById('keepDays').value);
+            const archiveDays = parseInt(document.getElementById('archiveDays').value);
+            const deleteDays = parseInt(document.getElementById('deleteDays').value);
+            
+            // Validate
+            if (!folderName) {
+                alert('Please enter a folder name');
+                return;
+            }
+            
+            if (keepDays >= archiveDays || archiveDays > deleteDays) {
+                alert('Invalid periods: Keep < Archive <= Delete');
+                return;
+            }
+            
+            const previewBtn = document.getElementById('previewHistory');
+            previewBtn.disabled = true;
+            previewBtn.textContent = 'Calculating...';
+            
+            showHistoryProgress('🔍 Analyzing emails by date...');
+            
+            // Call backend for preview
+            fetch('/action/manage-history', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    sender_emails: senderEmails,
+                    folder_name: folderName,
+                    keep_days: keepDays,
+                    archive_days: archiveDays,
+                    delete_days: deleteDays,
+                    preview_only: true
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const preview = data.preview;
+                    showHistoryProgress(
+                        `📊 Preview Results:\n` +
+                        `• Keep in Inbox: ${preview.keep_count} emails\n` +
+                        `• Move to Archive-${folderName}: ${preview.archive_count} emails\n` +
+                        `• Move to Trash: ${preview.delete_count} emails`
+                    );
+                    
+                    // Show execute button
+                    document.getElementById('previewHistory').style.display = 'none';
+                    document.getElementById('executeHistory').style.display = 'inline-block';
+                    
+                    // Handle execute
+                    document.getElementById('executeHistory').addEventListener('click', function() {
+                        executeManageHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview);
+                    });
+                } else {
+                    showHistoryProgress(`❌ Error: ${data.message}`);
+                    previewBtn.disabled = false;
+                    previewBtn.textContent = 'Preview Changes';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showHistoryProgress(`❌ Error: ${error.message}`);
+                previewBtn.disabled = false;
+                previewBtn.textContent = 'Preview Changes';
+            });
+        }
+        
+        function executeManageHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview) {
+            // Confirm destructive action
+            const confirmText = `You are about to:\n\n` +
+                `• Archive ${preview.archive_count} emails\n` +
+                `• Delete ${preview.delete_count} emails to Trash\n\n` +
+                `This action cannot be easily undone.\n\n` +
+                `Type "DELETE" to confirm:`;
+            
+            const userInput = prompt(confirmText);
+            if (userInput !== 'DELETE') {
+                alert('Action cancelled. You must type "DELETE" to confirm.');
+                return;
+            }
+            
+            const executeBtn = document.getElementById('executeHistory');
+            const cancelBtn = document.querySelector('.btn-cancel');
+            
+            executeBtn.disabled = true;
+            cancelBtn.disabled = true;
+            executeBtn.textContent = 'Executing...';
+            
+            showHistoryProgress('⏳ Applying retention policy...');
+            
+            // Execute
+            fetch('/action/manage-history', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    sender_emails: senderEmails,
+                    folder_name: folderName,
+                    keep_days: keepDays,
+                    archive_days: archiveDays,
+                    delete_days: deleteDays,
+                    preview_only: false
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showHistoryProgress(
+                        `✅ Success!\n` +
+                        `Archived: ${data.executed.archived} emails\n` +
+                        `Deleted: ${data.executed.deleted} emails to Trash`
+                    );
+                    
+                    setTimeout(() => {
+                        alert(data.message);
+                        closeManageHistoryModal();
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    showHistoryProgress(`❌ Error: ${data.message}`);
+                    executeBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    executeBtn.textContent = 'Execute Policy';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showHistoryProgress(`❌ Error: ${error.message}`);
+                executeBtn.disabled = false;
+                cancelBtn.disabled = false;
+                executeBtn.textContent = 'Execute Policy';
+            });
         }
 
         function handleDeleteAll() {
@@ -452,5 +683,4 @@
         }
     </script>
 </body>
-
 </html>
