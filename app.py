@@ -860,6 +860,31 @@ def open_browser():
     """Open browser after short delay"""
     webbrowser.open('http://127.0.0.1:5000')
 
+
+@app.route('/api/storage-info', methods=['GET'])
+def get_storage_info():
+    """Get storage information for current user"""
+    
+    email_address = session.get('email')
+    access_token = session.get('access_token')
+    provider = session.get('provider')
+    
+    if not email_address or not access_token:
+        return jsonify({'success': False, 'message': 'Not authenticated'})
+    
+    try:
+        if provider == 'google':
+            gmail = GmailAPI(access_token)
+            result = gmail.get_storage_info()
+            return jsonify(result)
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Storage info only available for Google'
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 if __name__ == '__main__':
     # Open browser after 1 second
     Timer(1, open_browser).start()

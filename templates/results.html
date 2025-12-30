@@ -12,6 +12,16 @@
     <div class="container wide">
         <header>
             <h1>📧 Email Scraper</h1>
+            <p class="results-summary">
+                <strong>{{ total_emails|int }}</strong> emails from
+                <strong>{{ senders|length }}</strong> senders
+                <span id="storageInfo" style="margin-left: 1rem; color: #6b7280;">
+                    <span class="spinner-small"
+                        style="display: inline-block; width: 12px; height: 12px; border: 2px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                    Loading storage...
+                </span>
+                ({{ days_analyzed }} day{% if days_analyzed|int > 1 %}s{% endif %} period)
+            </p>
             <p>Analysis Results</p>
             <div class="period-badge">
                 📅 {{ period_label }}
@@ -691,6 +701,26 @@
             // Sorting functionality to be implemented
             console.log('Sort by:', column);
         }
+        // Fetch and display storage info
+        fetch('/api/storage-info')
+            .then(response => response.json())
+            .then(data => {
+                const storageInfo = document.getElementById('storageInfo');
+                if (data.success) {
+                    if (data.messages_total !== undefined) {
+                        storageInfo.innerHTML = `📧 <strong>${data.messages_total.toLocaleString()}</strong> total messages`;
+                    } else if (data.used_gb !== undefined) {
+                        const percentage = data.percentage.toFixed(1);
+                        storageInfo.innerHTML = `💾 <strong>${data.used_gb.toFixed(1)} GB</strong> used (${percentage}% of ${data.total_gb} GB)`;
+                    }
+                } else {
+                    storageInfo.innerHTML = '';
+                }
+            })
+            .catch(error => {
+                console.error('Storage info error:', error);
+                document.getElementById('storageInfo').innerHTML = '';
+            });
     </script>
 </body>
 
