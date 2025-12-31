@@ -5,23 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Results - Email Scraper</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
 </head>
 
 <body>
     <div class="container wide">
         <header>
             <h1>📧 Email Scraper</h1>
-            <p class="results-summary">
-                <strong>{{ total_emails|int }}</strong> emails from
-                <strong>{{ senders|length }}</strong> senders
-                <span id="storageInfo" style="margin-left: 1rem; color: #6b7280;">
-                    <span class="spinner-small"
-                        style="display: inline-block; width: 12px; height: 12px; border: 2px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
-                    Loading storage...
-                </span>
-                ({{ days_analyzed }} day{% if days_analyzed|int > 1 %}s{% endif %} period)
-            </p>
             <p>Analysis Results</p>
             <div class="period-badge">
                 📅 {{ period_label }}
@@ -42,10 +32,16 @@
             {% endif %}
 
             <div class="results-header">
-                <h2>📊 Analysis Results</h2>
+
                 <div class="results-summary">
-                    <strong>{{ total_emails }}</strong> emails from <strong>{{ total_senders }}</strong> senders
-                    (<strong>{{ days_analyzed }}</strong> day{% if days_analyzed|int > 1 %}s{% endif %} period)
+                    <strong>{{ total_emails|int }}</strong> emails from
+                    <strong>{{ senders|length }}</strong> senders
+                    <span id="storageInfo" style="margin-left: 1rem; color: #6b7280;">
+                        <span class="spinner-small"
+                            style="display: inline-block; width: 12px; height: 12px; border: 2px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                        Loading storage...
+                    </span>
+                    ({{ days_analyzed }} day{% if days_analyzed|int > 1 %}s{% endif %} period)
                 </div>
             </div>
 
@@ -64,7 +60,7 @@
 
                 {% if features.manage_history %}
                 <button class="action-button" id="manageHistoryBtn" onclick="handleManageHistory()" disabled>
-                    🗃️ Manage History
+                    📜 Manage History
                 </button>
                 {% endif %}
 
@@ -82,57 +78,46 @@
             </div>
 
             <div class="table-wrapper">
-                <table id="resultsTable">
+                <table id="resultsTable" class="results-table">
                     <thead>
                         <tr>
                             <th class="checkbox-cell">
                                 <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
                             </th>
                             <th class="sortable" onclick="sortTable('sender_name')">
-                                Sender Name
-                                <span class="sort-indicator">▼</span>
+                                Sender Name <span class="sort-indicator">▼</span>
                             </th>
                             <th class="sortable" onclick="sortTable('organization')">
-                                Organization
-                                <span class="sort-indicator">▼</span>
+                                Organization <span class="sort-indicator">▼</span>
                             </th>
                             <th class="sortable" onclick="sortTable('count')">
-                                Count
-                                <span class="sort-indicator">▼</span>
+                                Count <span class="sort-indicator">▼</span>
                             </th>
                             <th class="sortable" onclick="sortTable('size')">
-                                Size
-                                <span class="sort-indicator">▼</span>
+                                Size <span class="sort-indicator">▼</span>
                             </th>
                             <th class="sortable" onclick="sortTable('last_received')">
-                                Last Received
-                                <span class="sort-indicator">▼</span>
+                                Last Received <span class="sort-indicator">▼</span>
                             </th>
-                            <th class="sortable" onclick="sortTable('read_unread')">
-                                Read/Unread
-                                <span class="sort-indicator">▼</span>
+                            <th class="sortable" onclick="sortTable('read_count')">
+                                Read/Unread <span class="sort-indicator">▼</span>
                             </th>
                             <th class="sortable" onclick="sortTable('unread_pct')">
-                                % Unread
-                                <span class="sort-indicator">▼</span>
+                                Unread % <span class="sort-indicator">▼</span>
                             </th>
                             <th class="sortable" onclick="sortTable('nuisance')">
-                                Nuisance
-                                <span class="tooltip" title="Score based on unread%, count, and size">ℹ️</span>
+                                Nuisance <span class="tooltip" title="Unread % + Count + Size (MB)">ⓘ</span>
                                 <span class="sort-indicator">▼</span>
                             </th>
-                            <th>
-                                Unsubscribe?
-                                <span class="tooltip" title="Unsubscribe link detected in email">ℹ️</span>
-                            </th>
+                            <th>Unsubscribe</th>
                         </tr>
                     </thead>
                     <tbody id="resultsBody">
                         {% for sender in senders %}
                         <tr data-sender="{{ sender.sender_email }}">
                             <td class="checkbox-cell">
-                                <input type="checkbox" class="sender-checkbox" data-email="{{ sender.sender_email }}"
-                                    onchange="updateSelection()">
+                                <input type="checkbox" class="sender-checkbox" value="{{ sender.sender_email }}"
+                                    onchange="updateSelection(this)">
                             </td>
                             <td>{{ sender.sender_name }}</td>
                             <td>{{ sender.organization }}</td>
@@ -143,10 +128,11 @@
                             <td>{{ sender.unread_pct }}%</td>
                             <td>{{ sender.nuisance }}</td>
                             <td>
-                                <span
-                                    class="badge {% if sender.has_unsubscribe %}badge-yes{% else %}badge-no{% endif %}">
-                                    {% if sender.has_unsubscribe %}Yes{% else %}No{% endif %}
-                                </span>
+                                {% if sender.has_unsubscribe %}
+                                <span class="badge badge-yes">Yes</span>
+                                {% else %}
+                                <span class="badge badge-no">No</span>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -154,45 +140,73 @@
                 </table>
             </div>
 
-            <div style="text-align: center;">
-                <a href="/" class="new-analysis-button">🔄 New Analysis</a>
-            </div>
-
-            <div class="payment-section">
-                <h2>💝 Found This Useful?</h2>
-                <p>We've helped you analyze your inbox. If you found value, please consider an honor payment.</p>
-                <p style="margin-top: 0.5rem; color: var(--text-light);">
-                    Your payment helps us continue building privacy-first tools.
-                </p>
-                <div class="payment-buttons">
-                    <button class="pay-button" onclick="showPaymentModal()">
-                        Pay for Service
-                    </button>
-                    <button class="skip-button" onclick="skipPayment()">
-                        Do Not Pay
-                    </button>
-                </div>
+            <div style="text-align: center; margin-top: 2rem;">
+                <a href="/" class="new-analysis-button">
+                    🔄 New Analysis
+                </a>
             </div>
         </div>
     </div>
 
     <script>
-        let selectedSenders = new Set();
+        // Global state
+        const selectedSenders = new Set();
+        let currentSort = { column: null, ascending: true };
 
-        function updateSelection() {
-            const checkboxes = document.querySelectorAll('.sender-checkbox:checked');
-            selectedSenders.clear();
-            checkboxes.forEach(cb => selectedSenders.add(cb.dataset.email));
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            // All initialization happens here
+            fetchStorageInfo();
+        });
+
+        // Fetch and display storage info
+        function fetchStorageInfo() {
+            fetch('/api/storage-info')
+                .then(response => response.json())
+                .then(data => {
+                    const storageInfo = document.getElementById('storageInfo');
+                    if (data.success) {
+                        if (data.messages_total !== undefined) {
+                            storageInfo.innerHTML = `📧 <strong>${data.messages_total.toLocaleString()}</strong> total messages`;
+                        } else if (data.used_gb !== undefined) {
+                            const percentage = data.percentage.toFixed(1);
+                            storageInfo.innerHTML = `💾 <strong>${data.used_gb.toFixed(1)} GB</strong> used (${percentage}% of ${data.total_gb} GB)`;
+                        }
+                    } else {
+                        storageInfo.innerHTML = '';
+                    }
+                })
+                .catch(error => {
+                    console.error('Storage info error:', error);
+                    document.getElementById('storageInfo').innerHTML = '';
+                });
+        }
+
+        function updateSelection(checkbox) {
+            const email = checkbox.value;
+            if (checkbox.checked) {
+                selectedSenders.add(email);
+            } else {
+                selectedSenders.delete(email);
+                document.getElementById('selectAll').checked = false;
+            }
             updateActionButtons();
         }
 
         function toggleSelectAll() {
             const selectAll = document.getElementById('selectAll');
             const checkboxes = document.querySelectorAll('.sender-checkbox');
+
             checkboxes.forEach(cb => {
                 cb.checked = selectAll.checked;
+                if (selectAll.checked) {
+                    selectedSenders.add(cb.value);
+                } else {
+                    selectedSenders.delete(cb.value);
+                }
             });
-            updateSelection();
+
+            updateActionButtons();
         }
 
         function updateActionButtons() {
@@ -212,6 +226,83 @@
             if (archiveBtn) archiveBtn.disabled = !hasSelection;
         }
 
+        function sortTable(column) {
+            const tbody = document.getElementById('resultsBody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            // Toggle sort direction if same column
+            if (currentSort.column === column) {
+                currentSort.ascending = !currentSort.ascending;
+            } else {
+                currentSort.column = column;
+                currentSort.ascending = true;
+            }
+
+            // Column index mapping
+            const columnIndex = {
+                'sender_name': 1,
+                'organization': 2,
+                'count': 3,
+                'size': 4,
+                'last_received': 5,
+                'read_count': 6,
+                'unread_pct': 7,
+                'nuisance': 8
+            };
+
+            const idx = columnIndex[column];
+
+            rows.sort((a, b) => {
+                let aVal = a.cells[idx].textContent.trim();
+                let bVal = b.cells[idx].textContent.trim();
+
+                // Parse numbers for numeric columns
+                if (['count', 'unread_pct', 'nuisance'].includes(column)) {
+                    aVal = parseFloat(aVal.replace('%', '')) || 0;
+                    bVal = parseFloat(bVal.replace('%', '')) || 0;
+                } else if (column === 'size') {
+                    // Convert size to bytes for comparison
+                    aVal = parseSizeToBytes(aVal);
+                    bVal = parseSizeToBytes(bVal);
+                } else if (column === 'read_count') {
+                    // Parse "X / Y" format
+                    aVal = parseInt(aVal.split('/')[0]) || 0;
+                    bVal = parseInt(bVal.split('/')[0]) || 0;
+                }
+
+                if (aVal < bVal) return currentSort.ascending ? -1 : 1;
+                if (aVal > bVal) return currentSort.ascending ? 1 : -1;
+                return 0;
+            });
+
+            // Reorder DOM
+            rows.forEach(row => tbody.appendChild(row));
+
+            // Update sort indicators
+            document.querySelectorAll('.sort-indicator').forEach(indicator => {
+                indicator.textContent = '▼';
+                indicator.parentElement.classList.remove('sorted');
+            });
+
+            const header = document.querySelector(`th.sortable[onclick*="${column}"]`);
+            if (header) {
+                const indicator = header.querySelector('.sort-indicator');
+                indicator.textContent = currentSort.ascending ? '▲' : '▼';
+                header.classList.add('sorted');
+            }
+        }
+
+        function parseSizeToBytes(sizeStr) {
+            const match = sizeStr.match(/([\d.]+)\s*(KB|MB|GB)/i);
+            if (!match) return 0;
+
+            const value = parseFloat(match[1]);
+            const unit = match[2].toUpperCase();
+
+            const multipliers = { 'KB': 1024, 'MB': 1024 * 1024, 'GB': 1024 * 1024 * 1024 };
+            return value * (multipliers[unit] || 1);
+        }
+
         function handleUnsubscribe() {
             alert(`Unsubscribe feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
         }
@@ -220,11 +311,10 @@
             const count = selectedSenders.size;
             if (count === 0) return;
 
-            // Get all selected senders
+            // Get selected sender names
             const senderEmails = Array.from(selectedSenders);
             const senderNames = [];
 
-            // Collect sender names
             senderEmails.forEach(email => {
                 const row = document.querySelector(`tr[data-sender="${email}"]`);
                 if (row) {
@@ -233,15 +323,9 @@
                 }
             });
 
-            if (senderNames.length === 0) {
-                alert('Error: Could not find sender information');
-                return;
-            }
-
-            // Default folder name: first 5 chars of first sender
+            // Default folder name from first sender (first 5 characters, alphanumeric only)
             const defaultFolderName = senderNames[0].substring(0, 5).replace(/[^a-zA-Z0-9]/g, '');
 
-            // Show modal with folder name prompt
             showCreateFolderModal(senderEmails, senderNames, defaultFolderName);
         }
 
@@ -249,75 +333,72 @@
             const senderCount = senderEmails.length;
             const senderList = senderNames.join(', ');
 
-            // Create modal HTML
             const modalHTML = `
                 <div class="modal-overlay active" id="createFolderModal">
                     <div class="modal-dialog">
                         <div class="modal-header">
                             <h2>📁 Create Folder</h2>
                             <p style="color: var(--text-light); font-size: 0.9rem;">
-                                Move emails from <strong>${senderCount} sender(s)</strong>: ${senderList}
+                                Creating folder for <strong>${senderCount} sender(s)</strong>: ${senderList}
                             </p>
                         </div>
                         <div class="modal-body">
-                            <div class="progress-message" id="progressMessage"></div>
+                            <div class="progress-message" id="folderProgressMessage"></div>
+                            
                             <label for="folderName">Folder Name:</label>
                             <input type="text" id="folderName" value="${defaultFolderName}" placeholder="Enter folder name">
-                            <div class="help-text">
-                                💡 All emails from selected senders will be moved to this folder.
-                            </div>
+                            <div class="help-text">All emails from these senders will be moved to this folder</div>
                         </div>
                         <div class="modal-footer">
                             <button class="btn-cancel" onclick="closeCreateFolderModal()">Cancel</button>
-                            <button class="btn-confirm" id="confirmCalculate">Next: Count Emails</button>
+                            <button class="btn-confirm" id="calculateEmails">Calculate Emails</button>
                         </div>
                     </div>
                 </div>
             `;
 
-            // Add to page
             document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-            // Focus input
+            // Focus folder name input
             document.getElementById('folderName').focus();
-            document.getElementById('folderName').select();
 
-            // Handle "Next: Count Emails" button
-            document.getElementById('confirmCalculate').addEventListener('click', function () {
-                const folderName = document.getElementById('folderName').value.trim();
-                if (!folderName) {
-                    alert('Please enter a folder name');
-                    return;
-                }
-                // Start calculation phase
-                calculateEmailCount(senderEmails, folderName);
-            });
-
-            // Handle Enter key
-            document.getElementById('folderName').addEventListener('keypress', function (e) {
-                if (e.key === 'Enter') {
-                    document.getElementById('confirmCalculate').click();
-                }
+            // Handle Calculate
+            document.getElementById('calculateEmails').addEventListener('click', function () {
+                calculateEmailCount(senderEmails);
             });
         }
 
-        function calculateEmailCount(senderEmails, folderName) {
-            const confirmBtn = document.getElementById('confirmCalculate');
-            const cancelBtn = document.querySelector('.btn-cancel');
+        function closeCreateFolderModal() {
+            const modal = document.getElementById('createFolderModal');
+            if (modal) modal.remove();
+        }
 
-            // Disable buttons during calculation
-            confirmBtn.disabled = true;
-            cancelBtn.disabled = true;
-            confirmBtn.textContent = 'Calculating...';
+        function showFolderProgress(message) {
+            const progressDiv = document.getElementById('folderProgressMessage');
+            if (progressDiv) {
+                progressDiv.textContent = message;
+                progressDiv.classList.add('active');
+            }
+        }
 
-            showProgress('🔍 Counting all emails over all time...');
+        function calculateEmailCount(senderEmails) {
+            const folderName = document.getElementById('folderName').value.trim();
+
+            if (!folderName) {
+                alert('Please enter a folder name');
+                return;
+            }
+
+            const calculateBtn = document.getElementById('calculateEmails');
+            calculateBtn.disabled = true;
+            calculateBtn.textContent = 'Calculating...';
+
+            showFolderProgress('🔍 Counting all emails over all time...');
 
             // Call backend to count emails
             fetch('/action/count-emails', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     sender_emails: senderEmails
                 })
@@ -325,69 +406,49 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Show confirmation with total count
-                        showConfirmDialog(senderEmails, folderName, data.total_emails, data.sender_count);
+                        const totalEmails = data.total_emails;
+                        const senderCount = data.sender_count;
+
+                        showConfirmDialog(senderEmails, folderName, totalEmails, senderCount);
                     } else {
-                        showProgress(`❌ Error: ${data.message}`);
-                        confirmBtn.disabled = false;
-                        cancelBtn.disabled = false;
-                        confirmBtn.textContent = 'Next: Count Emails';
+                        showFolderProgress(`❌ Error: ${data.message}`);
+                        calculateBtn.disabled = false;
+                        calculateBtn.textContent = 'Calculate Emails';
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    showProgress(`❌ Error: ${error.message}`);
-                    confirmBtn.disabled = false;
-                    cancelBtn.disabled = false;
-                    confirmBtn.textContent = 'Next: Count Emails';
+                    showFolderProgress(`❌ Error: ${error.message}`);
+                    calculateBtn.disabled = false;
+                    calculateBtn.textContent = 'Calculate Emails';
                 });
         }
 
         function showConfirmDialog(senderEmails, folderName, totalEmails, senderCount) {
-            // Update modal to show confirmation
-            const modalDialog = document.querySelector('.modal-dialog');
-            modalDialog.innerHTML = `
-                <div class="modal-header">
-                    <h2>📁 Confirm Create Folder</h2>
-                </div>
-                <div class="modal-body">
-                    <div class="progress-message" id="progressMessage"></div>
-                    <p style="font-size: 1.1rem; margin-bottom: 1rem;">
-                        Found <strong>${totalEmails.toLocaleString()}</strong> emails from <strong>${senderCount}</strong> sender(s) over all time.
-                    </p>
-                    <p style="color: var(--text-light);">
-                        Move all to folder "<strong>${folderName}</strong>"?
-                    </p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-cancel" onclick="closeCreateFolderModal()">Cancel</button>
-                    <button class="btn-confirm" id="confirmMove">Move ${totalEmails.toLocaleString()} Emails</button>
-                </div>
-            `;
+            const confirmMessage =
+                `Found ${totalEmails.toLocaleString()} emails from ${senderCount} sender(s) over all time.\n\n` +
+                `Move all emails to folder "${folderName}"?`;
 
-            // Handle move confirmation
-            document.getElementById('confirmMove').addEventListener('click', function () {
+            if (confirm(confirmMessage)) {
                 executeCreateFolder(senderEmails, folderName, totalEmails);
-            });
+            } else {
+                closeCreateFolderModal();
+            }
         }
 
-        function executeCreateFolder(senderEmails, folderName, expectedTotal) {
-            const confirmBtn = document.getElementById('confirmMove');
+        function executeCreateFolder(senderEmails, folderName, totalEmails) {
+            const calculateBtn = document.getElementById('calculateEmails');
             const cancelBtn = document.querySelector('.btn-cancel');
 
-            // Disable buttons
-            confirmBtn.disabled = true;
+            calculateBtn.style.display = 'none';
             cancelBtn.disabled = true;
-            confirmBtn.textContent = 'Moving...';
 
-            showProgress(`📁 Creating folder and moving emails... (0/${expectedTotal.toLocaleString()})`);
+            showFolderProgress('📁 Moving emails... (0/' + totalEmails + ')');
 
-            // Send request to server
+            // Execute folder creation
             fetch('/action/create-folder', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     sender_emails: senderEmails,
                     folder_name: folderName
@@ -396,46 +457,40 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        showProgress(`✅ Success! Moved ${data.emails_moved.toLocaleString()} emails to "${data.folder_created}"`);
+                        const emailsMoved = data.emails_moved || 0;
+                        const ruleCreated = data.rule_created ? '✅' : '⚠️';
+
+                        showFolderProgress(
+                            `✅ Success!\n` +
+                            `Moved ${emailsMoved} emails to "${data.folder_created}"\n` +
+                            `${ruleCreated} ${data.rule_message}`
+                        );
+
+                        if (data.manual_instructions) {
+                            showFolderProgress(
+                                `✅ Success!\n` +
+                                `Moved ${emailsMoved} emails\n` +
+                                `${ruleCreated} ${data.rule_message}\n\n` +
+                                `Manual step: ${data.manual_instructions}`
+                            );
+                        }
 
                         setTimeout(() => {
-                            if (data.manual_instructions) {
-                                alert(`${data.message}\n\n⚠️ Email Rule:\n${data.rule_message}\n\nManual step required:\n${data.manual_instructions}`);
-                            } else {
-                                alert(data.message);
-                            }
+                            alert(data.message);
                             closeCreateFolderModal();
                             window.location.reload();
                         }, 2000);
                     } else {
-                        showProgress(`❌ Error: ${data.message}`);
-                        confirmBtn.disabled = false;
+                        showFolderProgress(`❌ Error: ${data.message}`);
                         cancelBtn.disabled = false;
-                        confirmBtn.textContent = 'Move Emails';
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    showProgress(`❌ Error: ${error.message}`);
-                    confirmBtn.disabled = false;
+                    showFolderProgress(`❌ Error: ${error.message}`);
                     cancelBtn.disabled = false;
-                    confirmBtn.textContent = 'Move Emails';
                 });
         }
-
-        function closeCreateFolderModal() {
-            const modal = document.getElementById('createFolderModal');
-            if (modal) {
-                modal.remove();
-            }
-        }
-
-        function showProgress(message) {
-            const progressDiv = document.getElementById('progressMessage');
-            progressDiv.textContent = message;
-            progressDiv.classList.add('active');
-        }
-
 
         function handleManageHistory() {
             const count = selectedSenders.size;
@@ -688,39 +743,6 @@
         function handleArchive() {
             alert(`Archive feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
         }
-
-        function showPaymentModal() {
-            alert('PayPal integration coming soon! For now, this is a free preview.');
-        }
-
-        function skipPayment() {
-            alert('Thank you for trying Email Scraper! We hope you found it useful.');
-        }
-
-        function sortTable(column) {
-            // Sorting functionality to be implemented
-            console.log('Sort by:', column);
-        }
-        // Fetch and display storage info
-        fetch('/api/storage-info')
-            .then(response => response.json())
-            .then(data => {
-                const storageInfo = document.getElementById('storageInfo');
-                if (data.success) {
-                    if (data.messages_total !== undefined) {
-                        storageInfo.innerHTML = `📧 <strong>${data.messages_total.toLocaleString()}</strong> total messages`;
-                    } else if (data.used_gb !== undefined) {
-                        const percentage = data.percentage.toFixed(1);
-                        storageInfo.innerHTML = `💾 <strong>${data.used_gb.toFixed(1)} GB</strong> used (${percentage}% of ${data.total_gb} GB)`;
-                    }
-                } else {
-                    storageInfo.innerHTML = '';
-                }
-            })
-            .catch(error => {
-                console.error('Storage info error:', error);
-                document.getElementById('storageInfo').innerHTML = '';
-            });
     </script>
 </body>
 
