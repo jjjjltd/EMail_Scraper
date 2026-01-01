@@ -232,9 +232,9 @@ class EmailActions:
         }
     
     @staticmethod
-    def manage_history(mail, sender_email, days_config, provider='google'):
+    def Clean_up_history(mail, sender_email, days_config, provider='google'):
         """
-        Manage email retention policies
+        Clean-up email retention policies
         
         Args:
             mail: Active IMAP connection
@@ -248,7 +248,7 @@ class EmailActions:
         # Placeholder for Phase 2
         return {
             'success': False,
-            'message': 'Manage History feature not yet implemented (Phase 2)',
+            'message': 'Clean-up History feature not yet implemented (Phase 2)',
             'emails_processed': 0
         }
     

@@ -489,9 +489,9 @@ class GmailAPI:
                 'folder_created': None
             }
     
-    def manage_history(self, sender_emails, folder_name, keep_days, archive_days, delete_days, preview_only=False):
+    def Clean_up_history(self, sender_emails, folder_name, keep_days, archive_days, delete_days, preview_only=False):
         """
-        Manage email retention for selected senders with three-tier policy
+        Clean_up email retention for selected senders with three-tier policy
         
         Args:
             sender_emails: List of sender email addresses
@@ -528,7 +528,7 @@ class GmailAPI:
             archive_cutoff = now - timedelta(days=archive_days)
             delete_cutoff = now - timedelta(days=delete_days)
             
-            print(f"DEBUG: Manage History - Keep: {keep_days}d, Archive: {archive_days}d, Delete: {delete_days}d")
+            print(f"DEBUG: Clean-up History - Keep: {keep_days}d, Archive: {archive_days}d, Delete: {delete_days}d")
             print(f"DEBUG: Date boundaries - Keep after: {keep_cutoff.strftime('%Y/%m/%d')}, Delete before: {delete_cutoff.strftime('%Y/%m/%d')}")
             
             # Collect message IDs by category
@@ -644,10 +644,62 @@ class GmailAPI:
         
         except Exception as e:
             import traceback
-            print(f"DEBUG: Error in manage_history: {e}")
+            print(f"DEBUG: Error in Clean-up_history: {e}")
             print(traceback.format_exc())
             return {
                 'success': False,
                 'message': f"Error: {str(e)}"
             }
 
+def get_storage_info(self):
+    """
+    Get Gmail storage information
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'used_bytes': int,
+            'total_bytes': int,
+            'used_mb': float,
+            'total_mb': float,
+            'used_gb': float,
+            'total_gb': float,
+            'percentage': float
+        }
+    """
+    try:
+        profile = self.service.users().getProfile(userId='me').execute()
+        
+        # Gmail storage is messagesTotal (number) and emailsTotal (size estimate)
+        # But actual storage comes from historyId and other metadata
+        # We need to use the quota from the profile
+        
+        # Note: Gmail API doesn't directly expose storage quota in profile
+        # We'll use messagesTotal as a proxy and emailsTotal for size
+        messages_total = profile.get('messagesTotal', 0)
+        threads_total = profile.get('threadsTotal', 0)
+        history_id = profile.get('historyId', 0)
+        
+        # For actual storage, we need to sum message sizes
+        # This is an approximation - get a sample and extrapolate
+        # Or we can just return message count for now
+        
+        # Gmail free tier = 15GB
+        total_bytes = 15 * 1024 * 1024 * 1024  # 15GB in bytes
+        
+        # This is a limitation: Gmail API doesn't provide direct storage used
+        # We can only estimate or return message count
+        
+        return {
+            'success': True,
+            'messages_total': messages_total,
+            'threads_total': threads_total,
+            'note': 'Gmail API does not provide direct storage quota. Message count shown instead.'
+        }
+        
+    except Exception as e:
+        print(f"DEBUG: Error getting storage info: {e}")
+        return {
+            'success': False,
+            'message': f"Error: {str(e)}"
+        }

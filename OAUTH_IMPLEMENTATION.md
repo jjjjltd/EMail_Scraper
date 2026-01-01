@@ -312,7 +312,7 @@ After OAuth testing succeeds:
    - Confirmation screens
    - Unsubscribe automation
    - Folder creation
-   - History management
+   - History Clean-up
 
 3. **Polish**
    - Progress indicators with count

@@ -11,7 +11,7 @@ Email Scraper analyzes your inbox to help you:
 - **Identify email clutter** - See which senders flood your inbox
 - **Spot unsubscribe opportunities** - Flags emails with unsubscribe links
 - **Calculate nuisance scores** - Combines unread%, count, and size
-- **Take informed action** - Sort, filter, and manage your email
+- **Take informed action** - Sort, filter, and Clean-up your email
 
 **All processing happens locally. Your emails never leave your device.**
 
@@ -88,7 +88,7 @@ You'll see a table with:
 Select senders using checkboxes and choose actions:
 - 🚫 Unsubscribe
 - 📁 Create Folder
-- 🗃️ Manage History
+- 🗃️ Clean-up History
 - 🗑️ Delete All
 - 📦 Archive
 
@@ -127,7 +127,7 @@ Gmail requires "App Passwords" for third-party applications:
 ### Phase 2 (Planned)
 - ⏳ Auto-unsubscribe functionality
 - ⏳ Folder creation and rules
-- ⏳ Email history management
+- ⏳ Email history clean-up
 - ⏳ Bulk delete operations
 - ⏳ Archive to zip/cloud
 - ⏳ PayPal integration

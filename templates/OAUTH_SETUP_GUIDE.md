@@ -355,7 +355,7 @@ build/
    - Verify: `git status` should NOT show `.env`
 
 2. **Store securely**
-   - Use password manager for production credentials
+   - Use password Clean-up for production credentials
    - Create separate credentials for dev/staging/production
    - Rotate secrets every 6-12 months
 

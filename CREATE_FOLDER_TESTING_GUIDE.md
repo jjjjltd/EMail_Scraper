@@ -32,7 +32,7 @@ Add these lines to your `.env`:
 # Feature Flags
 FEATURE_CREATE_FOLDER=true
 FEATURE_DELETE_ALL=false
-FEATURE_MANAGE_HISTORY=false
+FEATURE_Clean_up_HISTORY=false
 FEATURE_ARCHIVE=false
 FEATURE_UNSUBSCRIBE=false
 ```
@@ -237,7 +237,7 @@ FEATURE_DELETE_ALL=true
 2. **Test on Microsoft account** (secondary)
 3. **Document any issues found**
 4. **Update test script with results**
-5. **Phase 2:** Implement Delete All, Manage History, Archive
+5. **Phase 2:** Implement Delete All, Clean-up History, Archive
 
 ---
 
@@ -271,7 +271,7 @@ Each action is self-contained in `EmailActions` class:
 ```python
 EmailActions.create_folder(mail, sender, folder, provider)
 EmailActions.delete_all(mail, sender, provider)
-EmailActions.manage_history(mail, sender, config, provider)
+EmailActions.Clean-up_history(mail, sender, config, provider)
 ```
 
 **Benefits:**

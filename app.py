@@ -782,13 +782,13 @@ def action_create_folder():
         print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
-@app.route('/action/manage-history', methods=['POST'])
-def action_manage_history():
-    """Handle Manage History action"""
+@app.route('/action/clean_up-history', methods=['POST'])
+def action_clean_up_history():
+    """Handle Clean_up History action"""
     
     # Check if feature is enabled
-    if not is_action_enabled('manage_history'):
-        return jsonify({'success': False, 'message': 'Manage History feature is not enabled'})
+    if not is_action_enabled('clean_up_history'):
+        return jsonify({'success': False, 'message': 'Clean_up History feature is not enabled'})
     
     # Get session data
     email_address = session.get('email')
@@ -824,15 +824,15 @@ def action_manage_history():
     if not (keep_days < archive_days <= delete_days):
         return jsonify({'success': False, 'message': 'Invalid date periods: keep < archive <= delete'})
     
-    print(f"DEBUG: Manage history for {len(sender_emails)} sender(s), preview={preview_only}")
+    print(f"DEBUG: Clean_up history for {len(sender_emails)} sender(s), preview={preview_only}")
     
     try:
         # Use Gmail API for Google
         if provider == 'google':
-            print("DEBUG: Using Gmail API for manage history")
+            print("DEBUG: Using Gmail API for clean_up history")
             
             gmail = GmailAPI(access_token)
-            result = gmail.manage_history(
+            result = gmail.clean_up_history(
                 sender_emails,
                 folder_name,
                 keep_days,
@@ -847,18 +847,43 @@ def action_manage_history():
         else:
             return jsonify({
                 'success': False,
-                'message': 'Manage History not yet implemented for Microsoft'
+                'message': 'Clean up History not yet implemented for Microsoft'
             })
         
     except Exception as e:
         import traceback
-        print(f"DEBUG: Error in manage_history action: {e}")
+        print(f"DEBUG: Error in clean_up_history action: {e}")
         print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 def open_browser():
     """Open browser after short delay"""
     webbrowser.open('http://127.0.0.1:5000')
+
+
+@app.route('/api/storage-info', methods=['GET'])
+def get_storage_info():
+    """Get storage information for current user"""
+    
+    email_address = session.get('email')
+    access_token = session.get('access_token')
+    provider = session.get('provider')
+    
+    if not email_address or not access_token:
+        return jsonify({'success': False, 'message': 'Not authenticated'})
+    
+    try:
+        if provider == 'google':
+            gmail = GmailAPI(access_token)
+            result = gmail.get_storage_info()
+            return jsonify(result)
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Storage info only available for Google'
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == '__main__':
     # Open browser after 1 second
