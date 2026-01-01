@@ -134,7 +134,7 @@ Gmail requires "App Passwords" for third-party apps:
 **Action Toolbar:**
 - 🚫 Unsubscribe - Flag for Phase 2 implementation
 - 📁 Create Folder - Flag for Phase 2 implementation
-- 🗃️ Manage History - Flag for Phase 2 implementation
+- 🗃️ Clean-up History - Flag for Phase 2 implementation
 - 🗑️ Delete All - Flag for Phase 2 implementation
 - 📦 Archive - Flag for Phase 2 implementation
 
@@ -405,7 +405,7 @@ Flask==3.0.0
    - Option to create forwarding rule
    - Execute via IMAP commands
 
-6. **Manage History:**
+6. **Clean-up History:**
    - Retain only last N emails option
    - Retain only for X period option
    - Archive vs Delete toggle
@@ -581,7 +581,7 @@ build.bat
 
 **Primary:** People overwhelmed by email clutter
 - Professionals with 10,000+ emails
-- Non-technical users who don't know how to manage email
+- Non-technical users who don't know how to Clean-up email
 - Privacy-conscious individuals
 
 **Secondary:** Future Subscription Scraper users
@@ -683,7 +683,7 @@ build.bat
 **Session 4: Actions Phase 2**
 - Auto-unsubscribe implementation
 - Create folder functionality
-- Manage history options
+- Clean-up history options
 - Archive to zip
 
 **Session 5: Build & Deploy**

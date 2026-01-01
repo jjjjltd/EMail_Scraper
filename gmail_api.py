@@ -489,9 +489,9 @@ class GmailAPI:
                 'folder_created': None
             }
     
-    def manage_history(self, sender_emails, folder_name, keep_days, archive_days, delete_days, preview_only=False):
+    def Clean_up_history(self, sender_emails, folder_name, keep_days, archive_days, delete_days, preview_only=False):
         """
-        Manage email retention for selected senders with three-tier policy
+        Clean_up email retention for selected senders with three-tier policy
         
         Args:
             sender_emails: List of sender email addresses
@@ -528,7 +528,7 @@ class GmailAPI:
             archive_cutoff = now - timedelta(days=archive_days)
             delete_cutoff = now - timedelta(days=delete_days)
             
-            print(f"DEBUG: Manage History - Keep: {keep_days}d, Archive: {archive_days}d, Delete: {delete_days}d")
+            print(f"DEBUG: Clean-up History - Keep: {keep_days}d, Archive: {archive_days}d, Delete: {delete_days}d")
             print(f"DEBUG: Date boundaries - Keep after: {keep_cutoff.strftime('%Y/%m/%d')}, Delete before: {delete_cutoff.strftime('%Y/%m/%d')}")
             
             # Collect message IDs by category
@@ -644,7 +644,7 @@ class GmailAPI:
         
         except Exception as e:
             import traceback
-            print(f"DEBUG: Error in manage_history: {e}")
+            print(f"DEBUG: Error in Clean-up_history: {e}")
             print(traceback.format_exc())
             return {
                 'success': False,

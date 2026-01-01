@@ -36,12 +36,6 @@
                 <div class="results-summary">
                     <strong>{{ total_emails|int }}</strong> emails from
                     <strong>{{ senders|length }}</strong> senders
-                    <span id="storageInfo" style="margin-left: 1rem; color: #6b7280;">
-                        <span class="spinner-small"
-                            style="display: inline-block; width: 12px; height: 12px; border: 2px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
-                        Loading storage...
-                    </span>
-                    ({{ days_analyzed }} day{% if days_analyzed|int > 1 %}s{% endif %} period)
                 </div>
             </div>
 
@@ -58,9 +52,9 @@
                 </button>
                 {% endif %}
 
-                {% if features.manage_history %}
-                <button class="action-button" id="manageHistoryBtn" onclick="handleManageHistory()" disabled>
-                    📜 Manage History
+                {% if features.Cleanuphistory %}
+                <button class="action-button" id="CleanupHistoryBtn" onclick="handleCleanupHistory()" disabled>
+                    📜 Clean_up History
                 </button>
                 {% endif %}
 
@@ -159,28 +153,6 @@
             fetchStorageInfo();
         });
 
-        // Fetch and display storage info
-        function fetchStorageInfo() {
-            fetch('/api/storage-info')
-                .then(response => response.json())
-                .then(data => {
-                    const storageInfo = document.getElementById('storageInfo');
-                    if (data.success) {
-                        if (data.messages_total !== undefined) {
-                            storageInfo.innerHTML = `📧 <strong>${data.messages_total.toLocaleString()}</strong> total messages`;
-                        } else if (data.used_gb !== undefined) {
-                            const percentage = data.percentage.toFixed(1);
-                            storageInfo.innerHTML = `💾 <strong>${data.used_gb.toFixed(1)} GB</strong> used (${percentage}% of ${data.total_gb} GB)`;
-                        }
-                    } else {
-                        storageInfo.innerHTML = '';
-                    }
-                })
-                .catch(error => {
-                    console.error('Storage info error:', error);
-                    document.getElementById('storageInfo').innerHTML = '';
-                });
-        }
 
         function updateSelection(checkbox) {
             const email = checkbox.value;
@@ -215,13 +187,13 @@
             // Only update buttons that exist
             const unsubscribeBtn = document.getElementById('unsubscribeBtn');
             const createFolderBtn = document.getElementById('createFolderBtn');
-            const manageHistoryBtn = document.getElementById('manageHistoryBtn');
+            const cleanupHistoryBtn = document.getElementById('cleanupHistoryBtn');
             const deleteAllBtn = document.getElementById('deleteAllBtn');
             const archiveBtn = document.getElementById('archiveBtn');
 
             if (unsubscribeBtn) unsubscribeBtn.disabled = !hasSelection;
             if (createFolderBtn) createFolderBtn.disabled = !hasSelection;
-            if (manageHistoryBtn) manageHistoryBtn.disabled = !hasSelection;
+            if (cleanupHistoryBtn) cleanupHistoryBtn.disabled = !hasSelection;
             if (deleteAllBtn) deleteAllBtn.disabled = !hasSelection;
             if (archiveBtn) archiveBtn.disabled = !hasSelection;
         }
@@ -492,7 +464,7 @@
                 });
         }
 
-        function handleManageHistory() {
+        function handleCleanupHistory() {
             const count = selectedSenders.size;
             if (count === 0) return;
 
@@ -511,18 +483,18 @@
             // Default folder name from first sender
             const defaultFolderName = senderNames[0].substring(0, 5).replace(/[^a-zA-Z0-9]/g, '');
 
-            showManageHistoryModal(senderEmails, senderNames, defaultFolderName);
+            showCleanupHistoryModal(senderEmails, senderNames, defaultFolderName);
         }
 
-        function showManageHistoryModal(senderEmails, senderNames, defaultFolderName) {
+        function showCleanupHistoryModal(senderEmails, senderNames, defaultFolderName) {
             const senderCount = senderEmails.length;
             const senderList = senderNames.join(', ');
 
             const modalHTML = `
-                <div class="modal-overlay active" id="manageHistoryModal">
+                <div class="modal-overlay active" id="CleanupHistoryModal">
                     <div class="modal-dialog" style="max-width: 600px;">
                         <div class="modal-header">
-                            <h2>📜 Manage Email History</h2>
+                            <h2>📜 Clean-up Email History</h2>
                             <p style="color: var(--text-light); font-size: 0.9rem;">
                                 Selected: <strong>${senderCount} sender(s)</strong>: ${senderList}
                             </p>
@@ -569,7 +541,7 @@
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button class="btn-cancel" onclick="closeManageHistoryModal()">Cancel</button>
+                            <button class="btn-cancel" onclick="closeCleanupHistoryModal()">Cancel</button>
                             <button class="btn-confirm" id="previewHistory" style="background: #3b82f6;">Preview Changes</button>
                             <button class="btn-confirm" id="executeHistory" style="display: none;">Execute Policy</button>
                         </div>
@@ -584,12 +556,12 @@
 
             // Handle Preview
             document.getElementById('previewHistory').addEventListener('click', function () {
-                previewManageHistory(senderEmails);
+                previewCleanupHistory(senderEmails);
             });
         }
 
-        function closeManageHistoryModal() {
-            const modal = document.getElementById('manageHistoryModal');
+        function closeCleanupHistoryModal() {
+            const modal = document.getElementById('CleanupHistoryModal');
             if (modal) modal.remove();
         }
 
@@ -601,7 +573,7 @@
             }
         }
 
-        function previewManageHistory(senderEmails) {
+        function previewCleanupHistory(senderEmails) {
             const folderName = document.getElementById('historyFolderName').value.trim();
             const keepDays = parseInt(document.getElementById('keepDays').value);
             const archiveDays = parseInt(document.getElementById('archiveDays').value);
@@ -625,7 +597,7 @@
             showHistoryProgress('🔍 Analyzing emails by date...');
 
             // Call backend for preview
-            fetch('/action/manage-history', {
+            fetch('/action/clean_up_history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -654,7 +626,7 @@
 
                         // Handle execute
                         document.getElementById('executeHistory').addEventListener('click', function () {
-                            executeManageHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview);
+                            executeCleanUpHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview);
                         });
                     } else {
                         showHistoryProgress(`❌ Error: ${data.message}`);
@@ -670,7 +642,7 @@
                 });
         }
 
-        function executeManageHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview) {
+        function executeCleanUpHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview) {
             // Confirm destructive action
             const confirmText = `You are about to:\n\n` +
                 `• Archive ${preview.archive_count} emails\n` +
@@ -694,7 +666,7 @@
             showHistoryProgress('⏳ Applying retention policy...');
 
             // Execute
-            fetch('/action/manage-history', {
+            fetch('/action/clean_up_history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -717,7 +689,7 @@
 
                         setTimeout(() => {
                             alert(data.message);
-                            closeManageHistoryModal();
+                            closeCleanupHistoryModal();
                             window.location.reload();
                         }, 2000);
                     } else {

@@ -61,7 +61,7 @@ A complete **Email Scraper MVP** built on HERD principles:
 ### Actions Not Yet Implemented
 - ⏳ Auto-unsubscribe (buttons show "Phase 2" modal)
 - ⏳ Create folder
-- ⏳ Manage history
+- ⏳ Clean-up history
 - ⏳ Delete all
 - ⏳ Archive
 
@@ -137,7 +137,7 @@ See `TESTING_CHECKLIST.md` for complete 40+ test cases.
 ### Session 4: Action Implementation
 - Auto-unsubscribe: Parse links, click programmatically
 - Create folder: IMAP folder creation + rules
-- Manage history: Retention options + automation
+- Clean-up history: Retention options + automation
 - Delete all: Move to trash (not permanent)
 - Archive: Zip emails, calculate savings
 

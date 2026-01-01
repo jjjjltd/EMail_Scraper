@@ -173,7 +173,7 @@
 ### 17. Action Toolbar - Other Actions
 Test same flow for each:
 - [ ] 📁 Create Folder
-- [ ] 🗃️ Manage History
+- [ ] 🗃️ Clean-up History
 - [ ] 🗑️ Delete All
 - [ ] 📦 Archive
 
