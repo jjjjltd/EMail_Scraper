@@ -13,7 +13,7 @@ load_dotenv()
 FEATURES = {
     'create_folder': os.getenv('FEATURE_CREATE_FOLDER', 'true').lower() == 'true',
     'delete_all': os.getenv('FEATURE_DELETE_ALL', 'false').lower() == 'true',
-    'Clean_up_history': os.getenv('FEATURE_Clean_up_HISTORY', 'false').lower() == 'true',
+    'Cleanup_history': os.getenv('FEATURE_CLEANUP_HISTORY', 'false').lower() == 'true',
     'archive': os.getenv('FEATURE_ARCHIVE', 'false').lower() == 'true',
     'unsubscribe': os.getenv('FEATURE_UNSUBSCRIBE', 'false').lower() == 'true',
 }
@@ -32,8 +32,8 @@ ACTION_BUTTONS = {
         'phase': 2,
         'requires_selection': True
     },
-    'Clean_up_history': {
-        'label': '📜 Clean_up History',
+    'Cleanup_history': {
+        'label': '📜 Cleanup History',
         'description': 'Set retention policies for emails',
         'phase': 2,
         'requires_selection': True

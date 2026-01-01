@@ -782,13 +782,13 @@ def action_create_folder():
         print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
-@app.route('/action/clean_up-history', methods=['POST'])
+@app.route('/action/clean_up_history', methods=['POST'])
 def action_clean_up_history():
     """Handle Clean_up History action"""
     
     # Check if feature is enabled
-    if not is_action_enabled('clean_up_history'):
-        return jsonify({'success': False, 'message': 'Clean_up History feature is not enabled'})
+    if not is_action_enabled('Cleanup_history'):
+        return jsonify({'success': False, 'message': 'Cleanup History feature is not enabled'})
     
     # Get session data
     email_address = session.get('email')
@@ -832,7 +832,7 @@ def action_clean_up_history():
             print("DEBUG: Using Gmail API for clean_up history")
             
             gmail = GmailAPI(access_token)
-            result = gmail.clean_up_history(
+            result = gmail.Clean_up_history(
                 sender_emails,
                 folder_name,
                 keep_days,

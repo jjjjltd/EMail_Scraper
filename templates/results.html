@@ -52,9 +52,9 @@
                 </button>
                 {% endif %}
 
-                {% if features.Cleanuphistory %}
-                <button class="action-button" id="CleanupHistoryBtn" onclick="handleCleanupHistory()" disabled>
-                    📜 Clean_up History
+                {% if features.Cleanup_history %}
+                <button class="action-button" id="cleanupHistoryBtn" onclick="handlecleanupHistory()" disabled>
+                    📜 Cleanup History
                 </button>
                 {% endif %}
 
@@ -464,7 +464,7 @@
                 });
         }
 
-        function handleCleanupHistory() {
+        function handlecleanupHistory() {
             const count = selectedSenders.size;
             if (count === 0) return;
 
@@ -483,15 +483,15 @@
             // Default folder name from first sender
             const defaultFolderName = senderNames[0].substring(0, 5).replace(/[^a-zA-Z0-9]/g, '');
 
-            showCleanupHistoryModal(senderEmails, senderNames, defaultFolderName);
+            showcleanupHistoryModal(senderEmails, senderNames, defaultFolderName);
         }
 
-        function showCleanupHistoryModal(senderEmails, senderNames, defaultFolderName) {
+        function showcleanupHistoryModal(senderEmails, senderNames, defaultFolderName) {
             const senderCount = senderEmails.length;
             const senderList = senderNames.join(', ');
 
             const modalHTML = `
-                <div class="modal-overlay active" id="CleanupHistoryModal">
+                <div class="modal-overlay active" id="cleanupHistoryModal">
                     <div class="modal-dialog" style="max-width: 600px;">
                         <div class="modal-header">
                             <h2>📜 Clean-up Email History</h2>
@@ -541,10 +541,9 @@
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button class="btn-cancel" onclick="closeCleanupHistoryModal()">Cancel</button>
-                            <button class="btn-confirm" id="previewHistory" style="background: #3b82f6;">Preview Changes</button>
-                            <button class="btn-confirm" id="executeHistory" style="display: none;">Execute Policy</button>
-                        </div>
+                            <button class="btn-cancel" onclick="closecleanupHistoryModal()">Cancel</button>
+                            <button class="btn-confirm" id="previewHistory" onclick="previewcleanupHistory(senderEmails)" style="background: #3b82f6;">Preview Changes</button>
+                            <button class="btn-confirm" id="executeHistory" onclick="executecleanupHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays)" style="display: none;">Execute Clean Up</button>
                     </div>
                 </div>
             `;
@@ -556,12 +555,12 @@
 
             // Handle Preview
             document.getElementById('previewHistory').addEventListener('click', function () {
-                previewCleanupHistory(senderEmails);
+                previewcleanupHistory(senderEmails);
             });
         }
 
-        function closeCleanupHistoryModal() {
-            const modal = document.getElementById('CleanupHistoryModal');
+        function closecleanupHistoryModal() {
+            const modal = document.getElementById('cleanupHistoryModal');
             if (modal) modal.remove();
         }
 
@@ -573,7 +572,7 @@
             }
         }
 
-        function previewCleanupHistory(senderEmails) {
+        function previewcleanupHistory(senderEmails) {
             const folderName = document.getElementById('historyFolderName').value.trim();
             const keepDays = parseInt(document.getElementById('keepDays').value);
             const archiveDays = parseInt(document.getElementById('archiveDays').value);
@@ -626,7 +625,7 @@
 
                         // Handle execute
                         document.getElementById('executeHistory').addEventListener('click', function () {
-                            executeCleanUpHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview);
+                            executecleanupHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview);
                         });
                     } else {
                         showHistoryProgress(`❌ Error: ${data.message}`);
@@ -642,7 +641,7 @@
                 });
         }
 
-        function executeCleanUpHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview) {
+        function executecleanupHistory(senderEmails, folderName, keepDays, archiveDays, deleteDays, preview) {
             // Confirm destructive action
             const confirmText = `You are about to:\n\n` +
                 `• Archive ${preview.archive_count} emails\n` +
@@ -689,14 +688,14 @@
 
                         setTimeout(() => {
                             alert(data.message);
-                            closeCleanupHistoryModal();
+                            closecleanupHistoryModal();
                             window.location.reload();
                         }, 2000);
                     } else {
                         showHistoryProgress(`❌ Error: ${data.message}`);
                         executeBtn.disabled = false;
                         cancelBtn.disabled = false;
-                        executeBtn.textContent = 'Execute Policy';
+                        executeBtn.textContent = 'Execute Clean Up';
                     }
                 })
                 .catch(error => {
@@ -704,7 +703,7 @@
                     showHistoryProgress(`❌ Error: ${error.message}`);
                     executeBtn.disabled = false;
                     cancelBtn.disabled = false;
-                    executeBtn.textContent = 'Execute Policy';
+                    executeBtn.textContent = 'Execute Clean Up';
                 });
         }
 
