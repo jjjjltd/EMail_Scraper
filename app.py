@@ -917,7 +917,7 @@ def delete_all():
         gmail = GmailAPI(session['access_token'])
         result = gmail.delete_all(sender_emails, create_filter)
         return jsonify(result)
-    provider == 'microsoft':
+    elif provider == 'microsoft':
         # TODO: Implement IMAP delete_all in email_actions.py
         # For now, return not implemented
         return jsonify({'error': 'Delete All for Microsoft coming soon'}), 501

@@ -147,12 +147,6 @@
         const selectedSenders = new Set();
         let currentSort = { column: null, ascending: true };
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function () {
-            // All initialization happens here
-            fetchStorageInfo();
-        });
-
 
         function updateSelection(checkbox) {
             const email = checkbox.value;
@@ -710,7 +704,8 @@
         function handleDeleteAll() {
             const senderEmails = Array.from(selectedSenders);
             const senderNames = senderEmails.map(email => {
-                const row = document.querySelector(`input[data-sender="${email}"]`).closest('tr');
+                const checkbox = document.querySelector(`input.sender-checkbox[value="${email}"]`);
+                const row = checkbox.closest('tr');
                 return row.querySelector('td:nth-child(2)').textContent;
             });
 
