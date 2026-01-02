@@ -885,19 +885,6 @@ def get_storage_info():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
-if __name__ == '__main__':
-    # Open browser after 1 second
-    Timer(1, open_browser).start()
-    
-    # Run Flask app
-    print("🔍 Email Scraper starting...")
-    print("📧 Privacy-first inbox analysis with OAuth")
-    print("🌐 Opening browser at http://127.0.0.1:5000")
-    if TEST_MODE:
-        print("⚠️  TEST MODE: Read-only analysis")
-    
-    app.run(debug=False, host='127.0.0.1', port=5000)
-
 @app.route('/action/delete_all', methods=['POST'])
 def delete_all():
     """Delete all emails from selected senders"""
@@ -921,3 +908,17 @@ def delete_all():
         # TODO: Implement IMAP delete_all in email_actions.py
         # For now, return not implemented
         return jsonify({'error': 'Delete All for Microsoft coming soon'}), 501
+
+if __name__ == '__main__':
+    # Open browser after 1 second
+    Timer(1, open_browser).start()
+    
+    # Run Flask app
+    print("🔍 Email Scraper starting...")
+    print("📧 Privacy-first inbox analysis with OAuth")
+    print("🌐 Opening browser at http://127.0.0.1:5000")
+    if TEST_MODE:
+        print("⚠️  TEST MODE: Read-only analysis")
+    
+    app.run(debug=False, host='127.0.0.1', port=5000)
+
