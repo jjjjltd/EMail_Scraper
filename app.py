@@ -897,3 +897,27 @@ if __name__ == '__main__':
         print("⚠️  TEST MODE: Read-only analysis")
     
     app.run(debug=False, host='127.0.0.1', port=5000)
+
+@app.route('/action/delete_all', methods=['POST'])
+def delete_all():
+    """Delete all emails from selected senders"""
+    if not is_action_enabled('delete_all'):
+        return jsonify({'error': 'Delete All feature is not enabled'}), 403
+    
+    data = request.json
+    sender_emails = data.get('sender_emails', [])
+    create_filter = data.get('create_filter', False)
+    
+    if not sender_emails:
+        return jsonify({'error': 'No senders selected'}), 400
+    
+    provider = session.get('provider')
+    
+    if provider == 'google':
+        gmail = GmailAPI(session['access_token'])
+        result = gmail.delete_all(sender_emails, create_filter)
+        return jsonify(result)
+    provider == 'microsoft':
+        # TODO: Implement IMAP delete_all in email_actions.py
+        # For now, return not implemented
+        return jsonify({'error': 'Delete All for Microsoft coming soon'}), 501

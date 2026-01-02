@@ -651,55 +651,126 @@ class GmailAPI:
                 'message': f"Error: {str(e)}"
             }
 
-def get_storage_info(self):
-    """
-    Get Gmail storage information
+    def get_storage_info(self):
+        """
+        Get Gmail storage information
+        
+        Returns:
+            dict: {
+                'success': bool,
+                'used_bytes': int,
+                'total_bytes': int,
+                'used_mb': float,
+                'total_mb': float,
+                'used_gb': float,
+                'total_gb': float,
+                'percentage': float
+            }
+        """
+        try:
+            profile = self.service.users().getProfile(userId='me').execute()
+            
+            # Gmail storage is messagesTotal (number) and emailsTotal (size estimate)
+            # But actual storage comes from historyId and other metadata
+            # We need to use the quota from the profile
+            
+            # Note: Gmail API doesn't directly expose storage quota in profile
+            # We'll use messagesTotal as a proxy and emailsTotal for size
+            messages_total = profile.get('messagesTotal', 0)
+            threads_total = profile.get('threadsTotal', 0)
+            history_id = profile.get('historyId', 0)
+            
+            # For actual storage, we need to sum message sizes
+            # This is an approximation - get a sample and extrapolate
+            # Or we can just return message count for now
+            
+            # Gmail free tier = 15GB
+            total_bytes = 15 * 1024 * 1024 * 1024  # 15GB in bytes
+            
+            # This is a limitation: Gmail API doesn't provide direct storage used
+            # We can only estimate or return message count
+            
+            return {
+                'success': True,
+                'messages_total': messages_total,
+                'threads_total': threads_total,
+                'note': 'Gmail API does not provide direct storage quota. Message count shown instead.'
+            }
+            
+        except Exception as e:
+            print(f"DEBUG: Error getting storage info: {e}")
+            return {
+                'success': False,
+                'message': f"Error: {str(e)}"
+            }
     
-    Returns:
-        dict: {
-            'success': bool,
-            'used_bytes': int,
-            'total_bytes': int,
-            'used_mb': float,
-            'total_mb': float,
-            'used_gb': float,
-            'total_gb': float,
-            'percentage': float
-        }
-    """
-    try:
-        profile = self.service.users().getProfile(userId='me').execute()
+    def delete_all(self, sender_emails, create_filter=False):
+        """
+        Move all emails from specified senders to Trash
+        Optionally create filter to auto-delete future emails
         
-        # Gmail storage is messagesTotal (number) and emailsTotal (size estimate)
-        # But actual storage comes from historyId and other metadata
-        # We need to use the quota from the profile
+        Args:
+            sender_emails: List of sender email addresses
+            create_filter: Boolean - create auto-delete filter
         
-        # Note: Gmail API doesn't directly expose storage quota in profile
-        # We'll use messagesTotal as a proxy and emailsTotal for size
-        messages_total = profile.get('messagesTotal', 0)
-        threads_total = profile.get('threadsTotal', 0)
-        history_id = profile.get('historyId', 0)
-        
-        # For actual storage, we need to sum message sizes
-        # This is an approximation - get a sample and extrapolate
-        # Or we can just return message count for now
-        
-        # Gmail free tier = 15GB
-        total_bytes = 15 * 1024 * 1024 * 1024  # 15GB in bytes
-        
-        # This is a limitation: Gmail API doesn't provide direct storage used
-        # We can only estimate or return message count
-        
-        return {
-            'success': True,
-            'messages_total': messages_total,
-            'threads_total': threads_total,
-            'note': 'Gmail API does not provide direct storage quota. Message count shown instead.'
-        }
-        
-    except Exception as e:
-        print(f"DEBUG: Error getting storage info: {e}")
-        return {
-            'success': False,
-            'message': f"Error: {str(e)}"
-        }
+        Returns:
+            dict with counts and status
+        """
+        try:
+            deleted_count = 0
+            
+            # Get all messages from these senders
+            for sender in sender_emails:
+                query = f'from:{sender}'
+                message_ids = self.list_messages(query=query, max_results=None)
+                
+                # Move to trash
+                for msg_id in message_ids:
+                    self.service.users().messages().trash(
+                        userId='me',
+                        id=msg_id
+                    ).execute()
+                    deleted_count += 1
+            
+            # Create filter if requested
+            filter_id = None
+            if create_filter and sender_emails:
+                filter_id = self._create_delete_filter(sender_emails)
+            
+            return {
+                'success': True,
+                'deleted_count': deleted_count,
+                'filter_created': filter_id is not None,
+                'sender_count': len(sender_emails)
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def _create_delete_filter(self, sender_emails):
+        """Create Gmail filter to auto-delete emails from senders"""
+        try:
+            # Build OR query for multiple senders
+            from_query = ' OR '.join([f'from:{email}' for email in sender_emails])
+            
+            filter_content = {
+                'criteria': {
+                    'from': from_query if len(sender_emails) == 1 else None,
+                    'query': from_query if len(sender_emails) > 1 else None
+                },
+                'action': {
+                    'removeLabelIds': ['INBOX'],
+                    'addLabelIds': ['TRASH']
+                }
+            }
+            
+            result = self.service.users().settings().filters().create(
+                userId='me',
+                body=filter_content
+            ).execute()
+            
+            return result.get('id')
+            
+        except Exception as e:
+            print(f"Error creating delete filter: {e}")
+            return None

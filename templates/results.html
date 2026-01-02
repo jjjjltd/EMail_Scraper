@@ -708,9 +708,102 @@
         }
 
         function handleDeleteAll() {
-            alert(`Delete All feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+            const senderEmails = Array.from(selectedSenders);
+            const senderNames = senderEmails.map(email => {
+                const row = document.querySelector(`input[data-sender="${email}"]`).closest('tr');
+                return row.querySelector('td:nth-child(2)').textContent;
+            });
+
+            showDeleteAllModal(senderEmails, senderNames);
         }
 
+        function showDeleteAllModal(senderEmails, senderNames) {
+            const senderCount = senderEmails.length;
+            const senderList = senderNames.join(', ');
+
+            const modalHTML = `
+        <div class="modal-overlay active" id="deleteAllModal">
+            <div class="modal-dialog" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h2>🗑️ Delete All Emails</h2>
+                </div>
+                <div class="modal-body">
+                    <p>Selected: <strong>${senderCount} sender(s)</strong></p>
+                    <p style="color: #666;">${senderList}</p>
+                    
+                    <div class="warning-box" style="background: #fff3cd; padding: 12px; border-radius: 4px; margin: 15px 0;">
+                        ⚠️ <strong>Warning:</strong> Emails will be moved to Trash. Gmail auto-deletes from Trash after 30 days.
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <label>
+                            <input type="checkbox" id="createDeleteFilter">
+                            Auto-delete future emails from these senders
+                        </label>
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <label>Type <strong>DELETE</strong> to confirm:</label>
+                        <input type="text" id="deleteConfirmText" style="width: 100%; padding: 8px; margin-top: 5px;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeDeleteAllModal()">Cancel</button>
+                    <button class="btn-confirm" id="executeDelete" onclick="executeDeleteAll('${senderEmails.join(',')}')">Delete All</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+        }
+
+        function closeDeleteAllModal() {
+            const modal = document.getElementById('deleteAllModal');
+            if (modal) modal.remove();
+        }
+
+        function executeDeleteAll(senderEmailsStr) {
+            const confirmText = document.getElementById('deleteConfirmText').value;
+
+            if (confirmText !== 'DELETE') {
+                alert('You must type "DELETE" to confirm.');
+                return;
+            }
+
+            const senderEmails = senderEmailsStr.split(',');
+            const createFilter = document.getElementById('createDeleteFilter').checked;
+
+            const executeBtn = document.getElementById('executeDelete');
+            executeBtn.disabled = true;
+            executeBtn.textContent = 'Deleting...';
+
+            fetch('/action/delete_all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sender_emails: senderEmails,
+                    create_filter: createFilter
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(`Success! Deleted ${data.deleted_count} emails from ${data.sender_count} sender(s).${data.filter_created ? '\n\nAuto-delete filter created.' : ''}`);
+                        closeDeleteAllModal();
+                        location.reload();
+                    } else {
+                        alert(`Error: ${data.error}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error}`);
+                })
+                .finally(() => {
+                    executeBtn.disabled = false;
+                    executeBtn.textContent = 'Delete All';
+                });
+        }
         function handleArchive() {
             alert(`Archive feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
         }
