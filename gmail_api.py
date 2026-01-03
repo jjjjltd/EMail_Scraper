@@ -774,3 +774,79 @@ class GmailAPI:
         except Exception as e:
             print(f"Error creating delete filter: {e}")
             return None
+        
+    def archive_emails(self, sender_emails, create_filter=False):
+        """
+        Move all emails from specified senders to Archive label
+        Optionally create filter to auto-archive future emails
+        
+        Args:
+            sender_emails: List of sender email addresses
+            create_filter: Boolean - create auto-archive filter
+        
+        Returns:
+            dict with counts and status
+        """
+        try:
+            # Get or create Archive label
+            archive_label_id = self._get_or_create_label('Archive')
+            
+            archived_count = 0
+            
+            # Move all messages from these senders to Archive
+            for sender in sender_emails:
+                message_ids = self.search_messages(sender)
+                
+                # Move to Archive (add Archive label, remove INBOX)
+                for msg_id in message_ids:
+                    self.service.users().messages().modify(
+                        userId='me',
+                        id=msg_id,
+                        body={
+                            'addLabelIds': [archive_label_id],
+                            'removeLabelIds': ['INBOX']
+                        }
+                    ).execute()
+                    archived_count += 1
+            
+            # Create filter if requested
+            filter_id = None
+            if create_filter and sender_emails:
+                filter_id = self._create_archive_filter(sender_emails, archive_label_id)
+            
+            return {
+                'success': True,
+                'archived_count': archived_count,
+                'filter_created': filter_id is not None,
+                'sender_count': len(sender_emails)
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def _create_archive_filter(self, sender_emails, archive_label_id):
+        """Create Gmail filter to auto-archive emails from senders"""
+        try:
+            from_query = ' OR '.join([f'from:{email}' for email in sender_emails])
+            
+            filter_content = {
+                'criteria': {
+                    'from': from_query if len(sender_emails) == 1 else None,
+                    'query': from_query if len(sender_emails) > 1 else None
+                },
+                'action': {
+                    'removeLabelIds': ['INBOX'],
+                    'addLabelIds': [archive_label_id]
+                }
+            }
+            
+            result = self.service.users().settings().filters().create(
+                userId='me',
+                body=filter_content
+            ).execute()
+            
+            return result.get('id')
+            
+        except Exception as e:
+            print(f"Error creating archive filter: {e}")
+            return None

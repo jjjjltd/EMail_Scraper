@@ -909,6 +909,31 @@ def delete_all():
         # For now, return not implemented
         return jsonify({'error': 'Delete All for Microsoft coming soon'}), 501
 
+@app.route('/action/archive', methods=['POST'])
+def archive():
+    """Archive all emails from selected senders"""
+    if not is_action_enabled('archive'):
+        return jsonify({'error': 'Archive feature is not enabled'}), 403
+    
+    data = request.json
+    sender_emails = data.get('sender_emails', [])
+    create_filter = data.get('create_filter', False)
+    
+    if not sender_emails:
+        return jsonify({'error': 'No senders selected'}), 400
+    
+    provider = session.get('provider')
+    
+    if provider == 'google':
+        gmail = GmailAPI(session['access_token'])
+        result = gmail.archive_emails(sender_emails, create_filter)
+        return jsonify(result)
+    elif provider == 'microsoft':
+        # TODO: Implement IMAP archive
+        return jsonify({'error': 'Archive for Microsoft coming soon'}), 501
+    else:
+        return jsonify({'error': 'Unsupported provider'}), 400
+
 if __name__ == '__main__':
     # Open browser after 1 second
     Timer(1, open_browser).start()
