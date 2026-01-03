@@ -722,7 +722,7 @@ class GmailAPI:
             # Get all messages from these senders
             for sender in sender_emails:
                 query = f'from:{sender}'
-                message_ids = self.list_messages(query=query, max_results=None)
+                message_ids = self.search_messages(sender)
                 
                 # Move to trash
                 for msg_id in message_ids:
