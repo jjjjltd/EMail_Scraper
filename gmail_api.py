@@ -789,7 +789,7 @@ class GmailAPI:
         """
         try:
             # Get or create Archive label
-            archive_label_id = self._get_or_create_label('Archive')
+            archive_label_id = self._get_or_create_label('MyArchive')
             
             archived_count = 0
             
@@ -850,3 +850,42 @@ class GmailAPI:
         except Exception as e:
             print(f"Error creating archive filter: {e}")
             return None
+    def _get_or_create_label(self, label_name):
+        """
+        Get existing label ID or create new label
+        
+        Args:
+            label_name: Name of the label
+            
+        Returns:
+            str: Label ID
+        """
+        try:
+            # List all labels
+            results = self.service.users().labels().list(userId='me').execute()
+            labels = results.get('labels', [])
+            
+            # Check if label already exists
+            for label in labels:
+                if label['name'] == label_name:
+                    print(f"DEBUG: Label '{label_name}' already exists: {label['id']}")
+                    return label['id']
+            
+            # Create new label
+            label_object = {
+                'name': label_name,
+                'labelListVisibility': 'labelShow',
+                'messageListVisibility': 'show'
+            }
+            
+            created_label = self.service.users().labels().create(
+                userId='me',
+                body=label_object
+            ).execute()
+            
+            print(f"DEBUG: Created label '{label_name}': {created_label['id']}")
+            return created_label['id']
+            
+        except Exception as e:
+            print(f"Error getting/creating label: {e}")
+            raise
