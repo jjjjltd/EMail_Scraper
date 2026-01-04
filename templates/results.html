@@ -800,7 +800,90 @@
                 });
         }
         function handleArchive() {
-            alert(`Archive feature coming in Phase 2!\nSelected ${selectedSenders.size} sender(s).`);
+            const senderEmails = Array.from(selectedSenders);
+            const senderNames = senderEmails.map(email => {
+                const checkbox = document.querySelector(`input.sender-checkbox[value="${email}"]`);
+                const row = checkbox.closest('tr');
+                return row.querySelector('td:nth-child(2)').textContent;
+            });
+
+            showArchiveModal(senderEmails, senderNames);
+        }
+
+        function showArchiveModal(senderEmails, senderNames) {
+            const senderCount = senderEmails.length;
+            const senderList = senderNames.join(', ');
+
+            const modalHTML = `
+        <div class="modal-overlay active" id="archiveModal">
+            <div class="modal-dialog" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h2>📦 Archive Emails</h2>
+                </div>
+                <div class="modal-body">
+                    <p>Selected: <strong>${senderCount} sender(s)</strong></p>
+                    <p style="color: #666;">${senderList}</p>
+                    
+                    <div style="background: #e3f2fd; padding: 12px; border-radius: 4px; margin: 15px 0;">
+                        ℹ️ Emails will be moved to the <strong>Archive</strong> label and removed from Inbox.
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <label>
+                            <input type="checkbox" id="createArchiveFilter">
+                            Auto-archive future emails from these senders
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeArchiveModal()">Cancel</button>
+                    <button class="btn-confirm" id="executeArchive" onclick="executeArchive('${senderEmails.join(',')}')">Archive Emails</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+        }
+
+        function closeArchiveModal() {
+            const modal = document.getElementById('archiveModal');
+            if (modal) modal.remove();
+        }
+
+        function executeArchive(senderEmailsStr) {
+            const senderEmails = senderEmailsStr.split(',');
+            const createFilter = document.getElementById('createArchiveFilter').checked;
+
+            const executeBtn = document.getElementById('executeArchive');
+            executeBtn.disabled = true;
+            executeBtn.textContent = 'Archiving...';
+
+            fetch('/action/archive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sender_emails: senderEmails,
+                    create_filter: createFilter
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(`Success! Archived ${data.archived_count} emails from ${data.sender_count} sender(s).${data.filter_created ? '\n\nAuto-archive filter created.' : ''}`);
+                        closeArchiveModal();
+                        location.reload();
+                    } else {
+                        alert(`Error: ${data.error}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error}`);
+                })
+                .finally(() => {
+                    executeBtn.disabled = false;
+                    executeBtn.textContent = 'Archive Emails';
+                });
         }
     </script>
 </body>
