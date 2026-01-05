@@ -217,7 +217,7 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
         
         # Use IMAP for Microsoft
         elif provider == 'microsoft':
-            print("DEBUG: Using IMAP for Microsoft analysis")
+            print(f"DEBUG: Using IMAP for Microsoft analysis, {days} days")
             
             imap_server = 'imap-mail.outlook.com'
             
@@ -418,8 +418,12 @@ def index():
 def login(provider):
     """Initiate OAuth flow for provider"""
     # Store days selection in session
+    
     days = request.args.get('days', '1')
+    session.clear()
+    print(f"DEBUG: /login/{provider} - Days received from URL: {days}")
     session['days'] = days
+    print(f"DEBUG: /login/{provider} - Days stored in session: {session['days']}")
     
     if provider == 'google':
         redirect_uri = url_for('google_callback', _external=True)
@@ -472,7 +476,7 @@ def google_callback():
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
     """Handle Microsoft OAuth callback"""
-    
+    print(f"DEBUG: Entering microsoft_callback - Raw session: {dict(session)}")
     code = request.args.get('code')
     state = request.args.get('state')
     
@@ -514,8 +518,9 @@ def microsoft_callback():
             return render_template('error.html', error='Could not get email address from Microsoft')
         
         access_token = token['access_token']
+        print(f"Session days before retrieval: {session.get('days')}")
         days = session.get('days', '1')
-        
+        print(f"DEBUG: /oauth/microsoft/callback - Days: {days}, session days: {session.get('days')}")
         # Store in session for analysis
         session['email'] = email_address
         session['access_token'] = access_token
@@ -534,6 +539,7 @@ def results():
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
+    print(f"DEBUG: /results - session.get('days') at entry: {session.get('days')}")
     days = session.get('days', '1')
     
     if not email_address or not access_token:
