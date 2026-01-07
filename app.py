@@ -28,6 +28,7 @@ from gmail_api import GmailAPI
 load_dotenv()
 
 app = Flask(__name__)
+app.config['SESSION_TYPE'] = 'null'
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Test mode flag
@@ -430,12 +431,22 @@ def login(provider):
         return google.authorize_redirect(redirect_uri)
     elif provider == 'microsoft':
         import secrets
-        state = secrets.token_urlsafe(32)
-        
+        import json
+        state_token  = secrets.token_urlsafe(32)
+        days = request.args.get('days', '1')
+        session['days'] = days
+           # Create state token with embedded data
+        state_token = secrets.token_urlsafe(32)
+        state_data = {
+            'token': state_token,
+            'days': days,
+            'created': datetime.now().isoformat()
+        }
+
         # Store state in memory (not session)
         if not hasattr(app, 'oauth_states'):
             app.oauth_states = {}
-        app.oauth_states[state] = {'created': datetime.now()}
+        app.oauth_states[state_token] = {'created': datetime.now()}
         
         # Build OAuth URL manually
         auth_url = (
@@ -444,7 +455,7 @@ def login(provider):
             f"&response_type=code"
             f"&redirect_uri=http://localhost:5000/oauth/microsoft/callback"
             f"&scope=openid+email+profile+offline_access+https://outlook.office.com/IMAP.AccessAsUser.All+https://outlook.office.com/Mail.Read"
-            f"&state={state}"
+            f"&state={state_token}"
         )
         
         return redirect(auth_url)
@@ -478,14 +489,18 @@ def microsoft_callback():
     """Handle Microsoft OAuth callback"""
     print(f"DEBUG: Entering microsoft_callback - Raw session: {dict(session)}")
     code = request.args.get('code')
-    state = request.args.get('state')
+    state_token = request.args.get('state')
+
+    # Retrieve stored state data
+    state_data = app.oauth_states.get(state_token, {})
+    days = state_data.get('days', '7')    
     
     # Verify state from memory
     if not hasattr(app, 'oauth_states') or state not in app.oauth_states:
         return render_template('error.html', error='Invalid state - please try again')
     
     # Clean up state
-    del app.oauth_states[state]
+    del app.oauth_states[state_token]
     
     try:
         # Exchange code for token manually
