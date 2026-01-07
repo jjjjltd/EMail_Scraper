@@ -486,6 +486,16 @@ def google_callback():
 
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
+
+    print(f"DEBUG: Entering microsoft_callback - Raw session: {dict(session)}")
+    
+    # Clear old session data first
+    session.pop('days', None)
+    session.pop('access_token', None)
+    session.pop('email', None)
+    session.pop('provider', None)
+    
+
     """Handle Microsoft OAuth callback"""
     print(f"DEBUG: Entering microsoft_callback - Raw session: {dict(session)}")
     code = request.args.get('code')
@@ -493,10 +503,12 @@ def microsoft_callback():
 
     # Retrieve stored state data
     state_data = app.oauth_states.get(state_token, {})
-    days = state_data.get('days', '7')    
+    days = state_data.get('days', '94')    
+    
+    print(f"DEBUG: microsoft_callback - Retrieved days from state_data: {days}")
     
     # Verify state from memory
-    if not hasattr(app, 'oauth_states') or state not in app.oauth_states:
+    if not hasattr(app, 'oauth_states') or state_token not in app.oauth_states:
         return render_template('error.html', error='Invalid state - please try again')
     
     # Clean up state
@@ -519,7 +531,7 @@ def microsoft_callback():
         token_response = requests.post(token_url, data=token_data)
         token_response.raise_for_status()
         token = token_response.json()
-        
+        print(f"DEBUG: microsoft_callback - Retrieved days from state_data: {days} after requests")    
         # Get email from ID token instead of Graph API
         id_token = token.get('id_token')
         if id_token:
