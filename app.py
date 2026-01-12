@@ -28,6 +28,7 @@ from gmail_api import GmailAPI
 load_dotenv()
 
 app = Flask(__name__)
+app.config['SESSION_TYPE'] = 'null'
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Test mode flag
@@ -144,7 +145,6 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
     try:
         # Use Gmail API for Google (more reliable than IMAP)
         if provider == 'google':
-            print("DEBUG: Using Gmail API for analysis")
             
             # Initialize Gmail API
             gmail = GmailAPI(access_token)
@@ -217,7 +217,7 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
         
         # Use IMAP for Microsoft
         elif provider == 'microsoft':
-            print("DEBUG: Using IMAP for Microsoft analysis")
+            print(f"DEBUG: Using IMAP for Microsoft analysis, {days} days")
             
             imap_server = 'imap-mail.outlook.com'
             
@@ -418,20 +418,33 @@ def index():
 def login(provider):
     """Initiate OAuth flow for provider"""
     # Store days selection in session
+    
     days = request.args.get('days', '1')
+    session.clear()
     session['days'] = days
+    print(f"DEBUG: /login/{provider} - Days stored in session: {session['days']}")
     
     if provider == 'google':
         redirect_uri = url_for('google_callback', _external=True)
         return google.authorize_redirect(redirect_uri)
     elif provider == 'microsoft':
         import secrets
-        state = secrets.token_urlsafe(32)
-        
+        import json
+        state_token  = secrets.token_urlsafe(32)
+        days = request.args.get('days', '1')
+        session['days'] = days
+           # Create state token with embedded data
+        state_token = secrets.token_urlsafe(32)
+        state_data = {
+            'token': state_token,
+            'days': days,
+            'created': datetime.now().isoformat()
+        }
+
         # Store state in memory (not session)
         if not hasattr(app, 'oauth_states'):
             app.oauth_states = {}
-        app.oauth_states[state] = {'created': datetime.now()}
+        app.oauth_states[state_token] = state_data
         
         # Build OAuth URL manually
         auth_url = (
@@ -440,7 +453,7 @@ def login(provider):
             f"&response_type=code"
             f"&redirect_uri=http://localhost:5000/oauth/microsoft/callback"
             f"&scope=openid+email+profile+offline_access+https://outlook.office.com/IMAP.AccessAsUser.All+https://outlook.office.com/Mail.Read"
-            f"&state={state}"
+            f"&state={state_token}"
         )
         
         return redirect(auth_url)
@@ -471,17 +484,29 @@ def google_callback():
 
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
-    """Handle Microsoft OAuth callback"""
+
+    # Clear old session data first
+    session.pop('days', None)
+    session.pop('access_token', None)
+    session.pop('email', None)
+    session.pop('provider', None)
     
+
+    """Handle Microsoft OAuth callback"""
     code = request.args.get('code')
-    state = request.args.get('state')
+    state_token = request.args.get('state')
+
+    # Retrieve stored state data
+    state_data = app.oauth_states.get(state_token, {})
+    days = state_data.get('days', '94')
+    print(f"DEBUG FINAL: Retrieved days={days} from state, now storing to session")    
     
     # Verify state from memory
-    if not hasattr(app, 'oauth_states') or state not in app.oauth_states:
+    if not hasattr(app, 'oauth_states') or state_token not in app.oauth_states:
         return render_template('error.html', error='Invalid state - please try again')
     
     # Clean up state
-    del app.oauth_states[state]
+    del app.oauth_states[state_token]
     
     try:
         # Exchange code for token manually
@@ -500,7 +525,6 @@ def microsoft_callback():
         token_response = requests.post(token_url, data=token_data)
         token_response.raise_for_status()
         token = token_response.json()
-        
         # Get email from ID token instead of Graph API
         id_token = token.get('id_token')
         if id_token:
@@ -514,8 +538,6 @@ def microsoft_callback():
             return render_template('error.html', error='Could not get email address from Microsoft')
         
         access_token = token['access_token']
-        days = session.get('days', '1')
-        
         # Store in session for analysis
         session['email'] = email_address
         session['access_token'] = access_token
@@ -531,10 +553,12 @@ def microsoft_callback():
 @app.route('/results')
 def results():
     """Display analysis results"""
+    print(f"DEBUG: Full session at /results start: {dict(session)}")
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
-    days = session.get('days', '1')
+    days = session.get('days', '94')
+    print(f"DEBUG FINAL: /results using days={days}")
     
     if not email_address or not access_token:
         return redirect(url_for('index'))
@@ -588,13 +612,10 @@ def action_count_emails():
     
     if not sender_emails:
         return jsonify({'success': False, 'message': 'No senders provided'})
-    
-    print(f"DEBUG: Counting emails from {len(sender_emails)} senders")
-    
+        
     try:
         # Use Gmail API for Google (faster and more reliable)
         if provider == 'google':
-            print("DEBUG: Using Gmail API for counting emails")
             
             gmail = GmailAPI(access_token)
             total_emails = 0
@@ -602,8 +623,6 @@ def action_count_emails():
             for sender_email in sender_emails:
                 message_ids = gmail.search_messages(sender_email)
                 total_emails += len(message_ids)
-            
-            print(f"DEBUG: Total emails from all senders: {total_emails}")
             
             return jsonify({
                 'success': True,
@@ -640,14 +659,11 @@ def action_count_emails():
                 email_ids = messages[0].split()
                 count = len(email_ids)
                 total_emails += count
-                print(f"DEBUG: Found {count} emails from {sender_email}")
-        
+ 
         # Close connection
         mail.close()
         mail.logout()
-        
-        print(f"DEBUG: Total emails from all senders: {total_emails}")
-        
+                
         return jsonify({
             'success': True,
             'total_emails': total_emails,
@@ -656,8 +672,6 @@ def action_count_emails():
         
     except Exception as e:
         import traceback
-        print(f"DEBUG: Error counting emails: {e}")
-        print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/action/create-folder', methods=['POST'])
@@ -690,13 +704,10 @@ def action_create_folder():
     
     if not sender_emails or not folder_name:
         return jsonify({'success': False, 'message': 'Missing sender_emails or folder_name'})
-    
-    print(f"DEBUG: Create folder action for {len(sender_emails)} sender(s) -> {folder_name}")
-    
+        
     try:
         # Use Gmail API for Google (more reliable than IMAP)
         if provider == 'google':
-            print("DEBUG: Using Gmail API for folder operations")
             
             # Gmail API doesn't need IMAP connection
             result = EmailActions.create_folder_gmail(access_token, sender_emails, folder_name)
@@ -778,8 +789,7 @@ def action_create_folder():
         
     except Exception as e:
         import traceback
-        print(f"DEBUG: Error in create_folder action: {e}")
-        print(traceback.format_exc())
+
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/action/clean_up_history', methods=['POST'])
@@ -823,13 +833,10 @@ def action_clean_up_history():
     # Validate logic: keep < archive < delete
     if not (keep_days < archive_days <= delete_days):
         return jsonify({'success': False, 'message': 'Invalid date periods: keep < archive <= delete'})
-    
-    print(f"DEBUG: Clean_up history for {len(sender_emails)} sender(s), preview={preview_only}")
-    
+        
     try:
         # Use Gmail API for Google
         if provider == 'google':
-            print("DEBUG: Using Gmail API for clean_up history")
             
             gmail = GmailAPI(access_token)
             result = gmail.Clean_up_history(
@@ -852,8 +859,6 @@ def action_clean_up_history():
         
     except Exception as e:
         import traceback
-        print(f"DEBUG: Error in clean_up_history action: {e}")
-        print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 def open_browser():
@@ -940,7 +945,6 @@ if __name__ == '__main__':
     
     # Run Flask app
     print("🔍 Email Scraper starting...")
-    print("📧 Privacy-first inbox analysis with OAuth")
     print("🌐 Opening browser at http://127.0.0.1:5000")
     if TEST_MODE:
         print("⚠️  TEST MODE: Read-only analysis")
