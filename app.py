@@ -697,24 +697,20 @@ def action_create_folder():
     
     # Support both single sender (legacy) and multiple senders
     if not sender_emails:
-        # Fall back to single sender format
         single_sender = data.get('sender_email')
         if single_sender:
             sender_emails = [single_sender]
     
     if not sender_emails or not folder_name:
         return jsonify({'success': False, 'message': 'Missing sender_emails or folder_name'})
-        
+    
     try:
-        # Use Gmail API for Google (more reliable than IMAP)
+        # Route to provider-specific implementation
         if provider == 'google':
-            
-            # Gmail API doesn't need IMAP connection
             result = EmailActions.create_folder_gmail(access_token, sender_emails, folder_name)
             
-            # Gmail API handles both label creation and filter creation
             filters_created = result.get('filters_created', 0)
-            
+
             if filters_created > 0:
                 rule_result = {
                     'success': True,
@@ -727,71 +723,43 @@ def action_create_folder():
                     'message': 'Filters could not be created automatically',
                     'manual_instructions': f'Optional: Create filter FROM {", ".join(sender_emails)} → Move to {folder_name}'
                 }
-            
-            response = {
+
+            return jsonify({
                 'success': result['success'],
                 'message': result['message'],
                 'emails_moved': result.get('emails_moved', 0),
                 'failed_count': result.get('failed_count', 0),
                 'folder_created': result.get('folder_created'),
                 'rule_created': filters_created > 0,
-                'rule_message': rule_result['message'],
-                'manual_instructions': rule_result.get('manual_instructions'),
+                'rule_message': f'Created {filters_created} filter(s)' if filters_created > 0 else 'No filters created',
                 'filters_created': filters_created
-            }
-            
-            return jsonify(response)
+            })
         
-        # Use IMAP for Microsoft and other providers
-        # Determine IMAP server
-        if provider == 'google':
-            imap_server = 'imap.gmail.com'
         elif provider == 'microsoft':
-            imap_server = 'imap-mail.outlook.com'
+            result = EmailActions.create_folder_microsoft(access_token, sender_emails, folder_name)
+            
+            filters_created = result.get('filters_created', 0)
+            
+            return jsonify({
+                'success': result['success'],
+                'message': result['message'],
+                'emails_moved': result.get('emails_moved', 0),
+                'failed_count': result.get('failed_count', 0),
+                'folder_created': result.get('folder_created'),
+                'rule_created': filters_created > 0,
+                'rule_message': f'Created {filters_created} rule(s)' if filters_created > 0 else 'No rules created',
+                'filters_created': filters_created
+            })
+        
         else:
-            return jsonify({'success': False, 'message': 'Unknown provider'})
-        
-        # Connect to IMAP
-        mail = imaplib.IMAP4_SSL(imap_server)
-        
-        # Authenticate
-        auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
-        
-        def get_auth(challenge):
-            return auth_string.encode('utf-8')
-        
-        mail.authenticate('XOAUTH2', get_auth)
-        
-        # Execute create folder action (now supports multiple senders)
-        result = EmailActions.create_folder(mail, sender_emails, folder_name, provider)
-        
-        # Try to create email rule for first sender (will inform user if not possible via IMAP)
-        # Note: Rules typically apply per sender, so we just mention it for the first one
-        first_sender = sender_emails[0] if sender_emails else ''
-        rule_result = EmailActions.create_email_rule(mail, first_sender, folder_name, provider)
-        
-        # Close connection
-        mail.close()
-        mail.logout()
-        
-        # Combine results
-        response = {
-            'success': result['success'],
-            'message': result['message'],
-            'emails_moved': result.get('emails_moved', 0),
-            'folder_created': result.get('folder_created'),
-            'rule_created': rule_result['success'],
-            'rule_message': rule_result['message'],
-            'manual_instructions': rule_result.get('manual_instructions')
-        }
-        
-        return jsonify(response)
-        
+            return jsonify({'success': False, 'message': f'Unsupported provider: {provider}'})
+    
     except Exception as e:
         import traceback
-
+        print(f"DEBUG: Error in create_folder action: {e}")
+        print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
-
+    
 @app.route('/action/clean_up_history', methods=['POST'])
 def action_clean_up_history():
     """Handle Clean_up History action"""
