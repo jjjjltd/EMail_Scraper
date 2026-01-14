@@ -61,7 +61,7 @@ microsoft = oauth.register(
     client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
     server_metadata_url=f'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration',
     client_kwargs={
-        'scope': 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read'
+        'scope': 'openid email profile offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
     }
 )
 
