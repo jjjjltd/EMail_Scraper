@@ -59,9 +59,11 @@ microsoft = oauth.register(
     name='microsoft',
     client_id=os.getenv('MICROSOFT_CLIENT_ID'),
     client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
-    server_metadata_url=f'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration',
+    authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
     client_kwargs={
-        'scope': 'openid email profile offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
+        'scope': 'openid email profile offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite',
+        'token_endpoint_auth_method': 'client_secret_post'
     }
 )
 
@@ -499,7 +501,7 @@ def microsoft_callback():
     # Retrieve stored state data
     state_data = app.oauth_states.get(state_token, {})
     days = state_data.get('days', '94')
-    print(f"DEBUG FINAL: Retrieved days={days} from state, now storing to session")    
+    # print(f"DEBUG FINAL: Retrieved days={days} from state, now storing to session")    
     
     # Verify state from memory
     if not hasattr(app, 'oauth_states') or state_token not in app.oauth_states:
@@ -537,7 +539,19 @@ def microsoft_callback():
         if not email_address:
             return render_template('error.html', error='Could not get email address from Microsoft')
         
+        token = microsoft.authorize_access_token()
+
+
+
+        # ADD DEBUG HERE
+        print(f"DEBUG: token dict keys: {token.keys()}")
+        print(f"DEBUG: token['access_token'] value: {token['access_token'][:50]}")
+        access_token = "xyz"
         access_token = token['access_token']
+        print(f"DEBUG: access_token after assignment: {access_token[:50]}")
+
+
+
         # Store in session for analysis
         session['email'] = email_address
         session['access_token'] = access_token
@@ -553,12 +567,12 @@ def microsoft_callback():
 @app.route('/results')
 def results():
     """Display analysis results"""
-    print(f"DEBUG: Full session at /results start: {dict(session)}")
+    # print(f"DEBUG: Full session at /results start: {dict(session)}")
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
     days = session.get('days', '94')
-    print(f"DEBUG FINAL: /results using days={days}")
+    # print(f"DEBUG FINAL: /results using days={days}")
     
     if not email_address or not access_token:
         return redirect(url_for('index'))
@@ -736,6 +750,7 @@ def action_create_folder():
             })
         
         elif provider == 'microsoft':
+            print(f"DEBUG: Calling create_folder_microsoft, access token {access_token}, senders {sender_emails}, folder {folder_name}")
             result = EmailActions.create_folder_microsoft(access_token, sender_emails, folder_name)
             
             filters_created = result.get('filters_created', 0)
