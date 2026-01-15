@@ -63,7 +63,8 @@ microsoft = oauth.register(
     access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
     client_kwargs={
         'scope': 'openid email profile offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite',
-        'token_endpoint_auth_method': 'client_secret_post'
+        'token_endpoint_auth_method': 'client_secret_post',
+        'code_challenge_method': None
     }
 )
 
@@ -486,32 +487,24 @@ def google_callback():
 
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
-
-    # Clear old session data first
-    session.pop('days', None)
-    session.pop('access_token', None)
-    session.pop('email', None)
-    session.pop('provider', None)
-    
-
     """Handle Microsoft OAuth callback"""
+    
     code = request.args.get('code')
     state_token = request.args.get('state')
-
-    # Retrieve stored state data
-    state_data = app.oauth_states.get(state_token, {})
-    days = state_data.get('days', '94')
-    # print(f"DEBUG FINAL: Retrieved days={days} from state, now storing to session")    
     
-    # Verify state from memory
+    # Verify state from memory (our custom state for days)
     if not hasattr(app, 'oauth_states') or state_token not in app.oauth_states:
         return render_template('error.html', error='Invalid state - please try again')
+    
+    # Retrieve stored state data
+    state_data = app.oauth_states.get(state_token, {})
+    days = state_data.get('days', '1')
     
     # Clean up state
     del app.oauth_states[state_token]
     
     try:
-        # Exchange code for token manually
+        # Exchange code for token manually (bypass authlib to avoid CSRF)
         import requests
         import jwt
         
@@ -521,37 +514,33 @@ def microsoft_callback():
             'client_secret': os.getenv('MICROSOFT_CLIENT_SECRET'),
             'code': code,
             'redirect_uri': 'http://localhost:5000/oauth/microsoft/callback',
-            'grant_type': 'authorization_code'
+            'grant_type': 'authorization_code',
+            'scope': 'https://graph.microsoft.com/.default'
         }
         
         token_response = requests.post(token_url, data=token_data)
         token_response.raise_for_status()
         token = token_response.json()
-        # Get email from ID token instead of Graph API
+        
+        # Get access token
+        access_token = token['access_token']
+        
+        # Debug token format
+        print(f"DEBUG: access_token type: {type(access_token)}")
+        print(f"DEBUG: access_token first 50 chars: {access_token[:50]}")
+        print(f"DEBUG: Contains dots? {('.' in access_token)}")
+        
+        # Get email from ID token
         id_token = token.get('id_token')
         if id_token:
-            # Decode without verification (just to read claims)
             decoded = jwt.decode(id_token, options={"verify_signature": False})
             email_address = decoded.get('email') or decoded.get('preferred_username')
         else:
             email_address = None
         
         if not email_address:
-            return render_template('error.html', error='Could not get email address from Microsoft')
+            return render_template('error.html', error='Could not get email address')
         
-        token = microsoft.authorize_access_token()
-
-
-
-        # ADD DEBUG HERE
-        print(f"DEBUG: token dict keys: {token.keys()}")
-        print(f"DEBUG: token['access_token'] value: {token['access_token'][:50]}")
-        access_token = "xyz"
-        access_token = token['access_token']
-        print(f"DEBUG: access_token after assignment: {access_token[:50]}")
-
-
-
         # Store in session for analysis
         session['email'] = email_address
         session['access_token'] = access_token
@@ -562,6 +551,9 @@ def microsoft_callback():
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
+        import traceback
+        print(f"DEBUG: microsoft_callback error: {e}")
+        print(traceback.format_exc())
         return render_template('error.html', error=f'Authentication failed: {str(e)}')
 
 @app.route('/results')
