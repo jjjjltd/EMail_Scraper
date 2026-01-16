@@ -59,9 +59,12 @@ microsoft = oauth.register(
     name='microsoft',
     client_id=os.getenv('MICROSOFT_CLIENT_ID'),
     client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
-    server_metadata_url=f'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration',
+    authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
     client_kwargs={
-        'scope': 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read'
+        'scope': 'openid email profile offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite',
+        'token_endpoint_auth_method': 'client_secret_post',
+        'code_challenge_method': None
     }
 )
 
@@ -484,32 +487,24 @@ def google_callback():
 
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
-
-    # Clear old session data first
-    session.pop('days', None)
-    session.pop('access_token', None)
-    session.pop('email', None)
-    session.pop('provider', None)
-    
-
     """Handle Microsoft OAuth callback"""
+    
     code = request.args.get('code')
     state_token = request.args.get('state')
-
-    # Retrieve stored state data
-    state_data = app.oauth_states.get(state_token, {})
-    days = state_data.get('days', '94')
-    print(f"DEBUG FINAL: Retrieved days={days} from state, now storing to session")    
     
-    # Verify state from memory
+    # Verify state from memory (our custom state for days)
     if not hasattr(app, 'oauth_states') or state_token not in app.oauth_states:
         return render_template('error.html', error='Invalid state - please try again')
+    
+    # Retrieve stored state data
+    state_data = app.oauth_states.get(state_token, {})
+    days = state_data.get('days', '1')
     
     # Clean up state
     del app.oauth_states[state_token]
     
     try:
-        # Exchange code for token manually
+        # Exchange code for token manually (bypass authlib to avoid CSRF)
         import requests
         import jwt
         
@@ -519,25 +514,32 @@ def microsoft_callback():
             'client_secret': os.getenv('MICROSOFT_CLIENT_SECRET'),
             'code': code,
             'redirect_uri': 'http://localhost:5000/oauth/microsoft/callback',
-            'grant_type': 'authorization_code'
+            'grant_type': 'authorization_code',
         }
         
         token_response = requests.post(token_url, data=token_data)
         token_response.raise_for_status()
         token = token_response.json()
-        # Get email from ID token instead of Graph API
+        
+        # Get access token
+        access_token = token['access_token']
+        
+        # Debug token format
+        print(f"DEBUG: access_token type: {type(access_token)}")
+        print(f"DEBUG: access_token first 50 chars: {access_token[:50]}")
+        print(f"DEBUG: Contains dots? {('.' in access_token)}")
+        
+        # Get email from ID token
         id_token = token.get('id_token')
         if id_token:
-            # Decode without verification (just to read claims)
             decoded = jwt.decode(id_token, options={"verify_signature": False})
             email_address = decoded.get('email') or decoded.get('preferred_username')
         else:
             email_address = None
         
         if not email_address:
-            return render_template('error.html', error='Could not get email address from Microsoft')
+            return render_template('error.html', error='Could not get email address')
         
-        access_token = token['access_token']
         # Store in session for analysis
         session['email'] = email_address
         session['access_token'] = access_token
@@ -548,17 +550,20 @@ def microsoft_callback():
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
+        import traceback
+        print(f"DEBUG: microsoft_callback error: {e}")
+        print(traceback.format_exc())
         return render_template('error.html', error=f'Authentication failed: {str(e)}')
 
 @app.route('/results')
 def results():
     """Display analysis results"""
-    print(f"DEBUG: Full session at /results start: {dict(session)}")
+    # print(f"DEBUG: Full session at /results start: {dict(session)}")
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
     days = session.get('days', '94')
-    print(f"DEBUG FINAL: /results using days={days}")
+    # print(f"DEBUG FINAL: /results using days={days}")
     
     if not email_address or not access_token:
         return redirect(url_for('index'))
@@ -678,6 +683,12 @@ def action_count_emails():
 def action_create_folder():
     """Handle Create Folder action"""
     
+    # DEBUG: Check what token we have
+    access_token = session.get('access_token')
+    print(f"DEBUG: action_create_folder - token type: {type(access_token)}")
+    print(f"DEBUG: action_create_folder - token first 50: {access_token[:50] if access_token else 'None'}")
+    print(f"DEBUG: action_create_folder - has dots? {('.' in access_token) if access_token else 'N/A'}")
+
     # Check if feature is enabled
     if not is_action_enabled('create_folder'):
         return jsonify({'success': False, 'message': 'Create Folder feature is not enabled'})
@@ -736,6 +747,7 @@ def action_create_folder():
             })
         
         elif provider == 'microsoft':
+            print(f"DEBUG: Calling create_folder_microsoft, access token {access_token}, senders {sender_emails}, folder {folder_name}")
             result = EmailActions.create_folder_microsoft(access_token, sender_emails, folder_name)
             
             filters_created = result.get('filters_created', 0)

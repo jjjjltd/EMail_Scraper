@@ -63,7 +63,13 @@ class EmailActions:
             dict: {'success': bool, 'message': str, 'emails_moved': int, 'folder_created': str, 'filters_created': int}
         """
         import requests
-        
+        print(f"DEBUG: access_token type: {type(access_token)}")
+        print(f"DEBUG: access_token length: {len(access_token) if access_token else 'None'}")
+        print(f"DEBUG: access_token first 50 chars: {access_token[:50] if access_token else 'None'}")
+        print(f"DEBUG: Contains dots? {('.' in access_token) if access_token else 'N/A'}")
+    
+
+
         try:
             # Support both single sender and multiple senders
             if isinstance(sender_emails, str):
