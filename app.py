@@ -515,7 +515,6 @@ def microsoft_callback():
             'code': code,
             'redirect_uri': 'http://localhost:5000/oauth/microsoft/callback',
             'grant_type': 'authorization_code',
-            'scope': 'https://graph.microsoft.com/.default'
         }
         
         token_response = requests.post(token_url, data=token_data)
@@ -684,6 +683,12 @@ def action_count_emails():
 def action_create_folder():
     """Handle Create Folder action"""
     
+    # DEBUG: Check what token we have
+    access_token = session.get('access_token')
+    print(f"DEBUG: action_create_folder - token type: {type(access_token)}")
+    print(f"DEBUG: action_create_folder - token first 50: {access_token[:50] if access_token else 'None'}")
+    print(f"DEBUG: action_create_folder - has dots? {('.' in access_token) if access_token else 'N/A'}")
+
     # Check if feature is enabled
     if not is_action_enabled('create_folder'):
         return jsonify({'success': False, 'message': 'Create Folder feature is not enabled'})
