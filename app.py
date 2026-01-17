@@ -539,11 +539,6 @@ def microsoft_callback():
         # Get access token
         access_token = token['access_token']
         
-        # Debug token format
-        print(f"DEBUG: access_token type: {type(access_token)}")
-        print(f"DEBUG: access_token first 50 chars: {access_token[:50]}")
-        print(f"DEBUG: Contains dots? {('.' in access_token)}")
-        
         # Get email from ID token
         id_token = token.get('id_token')
         if id_token:
@@ -823,9 +818,6 @@ def action_create_folder():
     
     # DEBUG: Check what token we have
     access_token = session.get('access_token')
-    print(f"DEBUG: action_create_folder - token type: {type(access_token)}")
-    print(f"DEBUG: action_create_folder - token first 50: {access_token[:50] if access_token else 'None'}")
-    print(f"DEBUG: action_create_folder - has dots? {('.' in access_token) if access_token else 'N/A'}")
 
     # Check if feature is enabled
     if not is_action_enabled('create_folder'):
