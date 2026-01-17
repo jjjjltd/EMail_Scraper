@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Executing Action</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h2 { color: #333; margin-bottom: 1rem; }
+        p { color: #666; }
+        .success { color: #10b981; margin-top: 1rem; }
+        .error { color: #ef4444; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Creating Folder</h2>
+        <div class="spinner" id="spinner"></div>
+        <p id="status">Moving emails to "{{ folder_name }}"...</p>
+        <div id="result"></div>
+    </div>
+    
+    <script>
+        window.onload = function() {
+            // Execute the create folder action
+            fetch('/action/create-folder', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sender_emails: {{ sender_emails | tojson }},
+                    folder_name: {{ folder_name | tojson }}
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('spinner').style.display = 'none';
+                
+                if (data.success) {
+                    document.getElementById('result').innerHTML = 
+                        '<div class="success">✓ ' + data.message + '</div>' +
+                        '<p>Redirecting to results...</p>';
+                    
+                    setTimeout(function() {
+                        window.location.href = '/results';
+                    }, 2000);
+                } else {
+                    document.getElementById('result').innerHTML = 
+                        '<div class="error">✗ ' + data.message + '</div>' +
+                        '<p><a href="/results">Return to results</a></p>';
+                }
+            })
+            .catch(error => {
+                document.getElementById('spinner').style.display = 'none';
+                document.getElementById('result').innerHTML = 
+                    '<div class="error">✗ Error: ' + error + '</div>' +
+                    '<p><a href="/results">Return to results</a></p>';
+            });
+        };
+    </script>
+</body>
+</html>
