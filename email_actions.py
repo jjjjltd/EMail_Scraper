@@ -188,6 +188,7 @@ class EmailActions:
                         print(f"DEBUG: Created rule for {sender_email}")
                     else:
                         print(f"DEBUG: Failed to create rule for {sender_email}: {rule_response.status_code}")
+                        print(f"DEBUG: Error response: {rule_response.text}")
                 
                 except Exception as e:
                     print(f"DEBUG: Error creating rule for {sender_email}: {e}")
