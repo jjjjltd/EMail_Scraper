@@ -54,9 +54,23 @@ google = oauth.register(
     }
 )
 
-# Microsoft OAuth configuration  
+# Microsoft OAuth configuration (IMAP - for analysis only)
 microsoft = oauth.register(
     name='microsoft',
+    client_id=os.getenv('MICROSOFT_CLIENT_ID'),
+    client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
+    authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    client_kwargs={
+        'scope': 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read',
+        'token_endpoint_auth_method': 'client_secret_post',
+        'code_challenge_method': None
+    }
+)
+
+# Microsoft Graph API OAuth configuration (for actions - JWT tokens)
+microsoft_graph = oauth.register(
+    name='microsoft_graph',
     client_id=os.getenv('MICROSOFT_CLIENT_ID'),
     client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
     authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
@@ -67,6 +81,7 @@ microsoft = oauth.register(
         'code_challenge_method': None
     }
 )
+
 
 def decode_mime_words(s):
     """Decode MIME encoded email headers"""
@@ -524,11 +539,6 @@ def microsoft_callback():
         # Get access token
         access_token = token['access_token']
         
-        # Debug token format
-        print(f"DEBUG: access_token type: {type(access_token)}")
-        print(f"DEBUG: access_token first 50 chars: {access_token[:50]}")
-        print(f"DEBUG: Contains dots? {('.' in access_token)}")
-        
         # Get email from ID token
         id_token = token.get('id_token')
         if id_token:
@@ -554,6 +564,129 @@ def microsoft_callback():
         print(f"DEBUG: microsoft_callback error: {e}")
         print(traceback.format_exc())
         return render_template('error.html', error=f'Authentication failed: {str(e)}')
+
+@app.route('/login/microsoft-graph')
+def login_microsoft_graph():
+    """Initiate Microsoft Graph API OAuth for actions (JWT tokens)"""
+    import secrets
+    
+    # Generate state token
+    state_token = secrets.token_urlsafe(32)
+    
+    # Store pending action if present in session
+    pending_action = session.get('pending_action')
+    
+    state_data = {
+        'token': state_token,
+        'created': datetime.now().isoformat(),
+        'pending_action': pending_action
+    }
+    
+    # Store state in memory
+    if not hasattr(app, 'graph_oauth_states'):
+        app.graph_oauth_states = {}
+    app.graph_oauth_states[state_token] = state_data
+    
+    # Build OAuth URL with Graph API scopes
+    auth_url = (
+        f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"
+        f"client_id={os.getenv('MICROSOFT_CLIENT_ID')}"
+        f"&response_type=code"
+        f"&redirect_uri=http://localhost:5000/oauth/microsoft-graph/callback"
+        f"&scope=openid+email+profile+offline_access+https://graph.microsoft.com/Mail.ReadWrite+https://graph.microsoft.com/MailboxSettings.ReadWrite"
+        f"&state={state_token}"
+    )
+    
+    return redirect(auth_url)
+
+@app.route('/oauth/microsoft-graph/callback')
+def microsoft_graph_callback():
+    """Handle Microsoft Graph API OAuth callback"""
+    
+    code = request.args.get('code')
+    state_token = request.args.get('state')
+    
+    # Verify state
+    if not hasattr(app, 'graph_oauth_states') or state_token not in app.graph_oauth_states:
+        return render_template('error.html', error='Invalid state - please try again')
+    
+    # Retrieve stored state data
+    state_data = app.graph_oauth_states.get(state_token, {})
+    pending_action = state_data.get('pending_action')
+    
+    # Clean up state
+    del app.graph_oauth_states[state_token]
+    
+    try:
+        import requests
+        
+        # Exchange code for Graph API token (JWT)
+        token_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
+        token_data = {
+            'client_id': os.getenv('MICROSOFT_CLIENT_ID'),
+            'client_secret': os.getenv('MICROSOFT_CLIENT_SECRET'),
+            'code': code,
+            'redirect_uri': 'http://localhost:5000/oauth/microsoft-graph/callback',
+            'grant_type': 'authorization_code',
+            'scope': 'https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
+        }
+        
+        token_response = requests.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        token = token_response.json()
+        
+        # Get Graph API access token (JWT)
+        graph_token = token['access_token']
+        
+        # Debug token format
+        print(f"DEBUG Graph: token type: {type(graph_token)}")
+        print(f"DEBUG Graph: token first 50 chars: {graph_token[:50]}")
+        print(f"DEBUG Graph: Contains dots (JWT)? {('.' in graph_token)}")
+        
+        # Store Graph API token in session
+        session['graph_token'] = graph_token
+        session.modified = True
+        
+        # If there's a pending action, redirect to execute it
+        if pending_action:
+            action_type = pending_action.get('type')
+            
+            if action_type == 'create_folder':
+                # Store action back in session for execution
+                session['pending_action'] = pending_action
+                session.modified = True
+                # Frontend will detect this and call the action API
+                return render_template('graph_auth_success.html')
+            # Add more action types here as needed
+        
+        # No pending action, just return to results
+        return redirect(url_for('results'))
+        
+    except Exception as e:
+        import traceback
+        print(f"DEBUG: microsoft_graph_callback error: {e}")
+        print(traceback.format_exc())
+        return render_template('error.html', error=f'Graph API authentication failed: {str(e)}')
+
+@app.route('/execute-pending-action')
+def execute_pending_action():
+    """Execute the pending action stored in session after Graph OAuth"""
+    pending_action = session.get('pending_action')
+    
+    if not pending_action:
+        return redirect(url_for('results'))
+    
+    action_type = pending_action.get('type')
+    
+    if action_type == 'create_folder':
+        # Render a page that will POST to the create-folder endpoint
+        return render_template('execute_create_folder.html',
+                             sender_emails=pending_action.get('sender_emails'),
+                             folder_name=pending_action.get('folder_name'))
+    
+    # Default: redirect to results
+    return redirect(url_for('results'))
+
 
 @app.route('/results')
 def results():
@@ -685,9 +818,6 @@ def action_create_folder():
     
     # DEBUG: Check what token we have
     access_token = session.get('access_token')
-    print(f"DEBUG: action_create_folder - token type: {type(access_token)}")
-    print(f"DEBUG: action_create_folder - token first 50: {access_token[:50] if access_token else 'None'}")
-    print(f"DEBUG: action_create_folder - has dots? {('.' in access_token) if access_token else 'N/A'}")
 
     # Check if feature is enabled
     if not is_action_enabled('create_folder'):
@@ -747,8 +877,32 @@ def action_create_folder():
             })
         
         elif provider == 'microsoft':
-            print(f"DEBUG: Calling create_folder_microsoft, access token {access_token}, senders {sender_emails}, folder {folder_name}")
-            result = EmailActions.create_folder_microsoft(access_token, sender_emails, folder_name)
+            # Check for Graph API token (JWT)
+            graph_token = session.get('graph_token')
+            
+            if not graph_token:
+                # Store pending action and redirect to get Graph API token
+                session['pending_action'] = {
+                    'type': 'create_folder',
+                    'sender_emails': sender_emails,
+                    'folder_name': folder_name
+                }
+                session.modified = True
+                
+                # Return redirect instruction to frontend
+                return jsonify({
+                    'success': False,
+                    'needs_graph_auth': True,
+                    'redirect_url': url_for('login_microsoft_graph'),
+                    'message': 'Redirecting for additional permissions...'
+                })
+            
+            # Use Graph API token for action
+            print(f"DEBUG: Using graph_token for create_folder_microsoft")
+            print(f"DEBUG: graph_token first 50: {graph_token[:50]}")
+            print(f"DEBUG: graph_token has dots (JWT)? {('.' in graph_token)}")
+            
+            result = EmailActions.create_folder_microsoft(graph_token, sender_emails, folder_name)
             
             filters_created = result.get('filters_created', 0)
             
