@@ -63,10 +63,26 @@ class EmailActions:
             dict: {'success': bool, 'message': str, 'emails_moved': int, 'folder_created': str, 'filters_created': int}
         """
         import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        import time
+        
         print(f"DEBUG: access_token type: {type(access_token)}")
         print(f"DEBUG: access_token length: {len(access_token) if access_token else 'None'}")
         print(f"DEBUG: access_token first 50 chars: {access_token[:50] if access_token else 'None'}")
         print(f"DEBUG: Contains dots? {('.' in access_token) if access_token else 'N/A'}")
+    
+        # Configure session with retry logic
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=3,  # 3 retries
+            backoff_factor=2,  # Wait 1s, 2s, 4s between retries
+            status_forcelist=[429, 500, 502, 503, 504],  # Retry on these HTTP codes
+            allowed_methods=["GET", "POST"]  # Retry GET and POST
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
     
 
 
@@ -85,10 +101,11 @@ class EmailActions:
             # Step 1: Create folder (mailFolder)
             print(f"DEBUG: Creating folder '{folder_name}' via Graph API")
             
-            folder_response = requests.post(
+            folder_response = session.post(
                 f"{graph_url}/mailFolders",
                 headers=headers,
-                json={'displayName': folder_name}
+                json={'displayName': folder_name},
+                timeout=30
             )
             
             if folder_response.status_code == 201:
@@ -97,17 +114,51 @@ class EmailActions:
             elif folder_response.status_code == 409:
                 # Folder already exists, get its ID
                 print(f"DEBUG: Folder '{folder_name}' already exists, finding ID...")
-                folders_response = requests.get(f"{graph_url}/mailFolders", headers=headers)
+                
+                # First try top-level folders
+                folders_response = session.get(f"{graph_url}/mailFolders", headers=headers, timeout=30)
+                
+                if folders_response.status_code != 200:
+                    print(f"DEBUG: Failed to list folders: {folders_response.status_code}")
+                    return {
+                        'success': False,
+                        'message': f'Folder exists but could not list folders to find ID',
+                        'emails_moved': 0,
+                        'folder_created': None,
+                        'filters_created': 0
+                    }
+                
                 folders = folders_response.json().get('value', [])
+                print(f"DEBUG: Found {len(folders)} top-level folders")
+                
                 folder_id = None
                 for folder in folders:
+                    print(f"DEBUG: Checking folder: {folder.get('displayName')}")
                     if folder['displayName'] == folder_name:
                         folder_id = folder['id']
+                        print(f"DEBUG: Found matching folder with ID: {folder_id}")
                         break
+                
+                if not folder_id:
+                    # Also check child folders (in case user created it as subfolder)
+                    for parent_folder in folders:
+                        child_url = f"{graph_url}/mailFolders/{parent_folder['id']}/childFolders"
+                        child_response = session.get(child_url, headers=headers, timeout=30)
+                        if child_response.status_code == 200:
+                            child_folders = child_response.json().get('value', [])
+                            for child in child_folders:
+                                print(f"DEBUG: Checking child folder: {child.get('displayName')}")
+                                if child['displayName'] == folder_name:
+                                    folder_id = child['id']
+                                    print(f"DEBUG: Found matching child folder with ID: {folder_id}")
+                                    break
+                            if folder_id:
+                                break
+                
                 if not folder_id:
                     return {
                         'success': False,
-                        'message': f'Folder exists but could not find ID',
+                        'message': f'Folder "{folder_name}" exists but could not find ID. Try using a different name.',
                         'emails_moved': 0,
                         'folder_created': None,
                         'filters_created': 0
@@ -127,35 +178,60 @@ class EmailActions:
             for sender_email in sender_emails:
                 print(f"DEBUG: Searching for emails from {sender_email}")
                 
-                # Search for emails from this sender
-                search_url = f"{graph_url}/messages?$filter=from/emailAddress/address eq '{sender_email}'"
-                messages_response = requests.get(search_url, headers=headers)
+                # Search for emails from this sender with pagination
+                search_url = f"{graph_url}/messages?$filter=from/emailAddress/address eq '{sender_email}'&$top=999"
                 
-                if messages_response.status_code != 200:
-                    print(f"DEBUG: Failed to search for {sender_email}: {messages_response.status_code}")
-                    continue
+                all_messages = []
+                while search_url:
+                    messages_response = session.get(search_url, headers=headers, timeout=30)
+                    
+                    if messages_response.status_code != 200:
+                        print(f"DEBUG: Failed to search for {sender_email}: {messages_response.status_code}")
+                        break
+                    
+                    data = messages_response.json()
+                    messages = data.get('value', [])
+                    all_messages.extend(messages)
+                    
+                    # Check for next page
+                    search_url = data.get('@odata.nextLink')
                 
-                messages = messages_response.json().get('value', [])
-                print(f"DEBUG: Found {len(messages)} emails from {sender_email}")
+                print(f"DEBUG: Found {len(all_messages)} emails from {sender_email}")
                 
                 # Move each email to the folder
-                for message in messages:
+                for message in all_messages:
                     message_id = message['id']
-                    try:
-                        move_response = requests.post(
-                            f"{graph_url}/messages/{message_id}/move",
-                            headers=headers,
-                            json={'destinationId': folder_id}
-                        )
-                        
-                        if move_response.status_code in [200, 201]:
-                            total_moved += 1
-                        else:
-                            print(f"DEBUG: Failed to move message {message_id}: {move_response.status_code}")
                     
-                    except Exception as e:
-                        print(f"DEBUG: Error moving message {message_id}: {e}")
-                        continue
+                    # Retry individual moves up to 3 times on network errors
+                    for attempt in range(3):
+                        try:
+                            move_response = session.post(
+                                f"{graph_url}/messages/{message_id}/move",
+                                headers=headers,
+                                json={'destinationId': folder_id},
+                                timeout=30
+                            )
+                            
+                            if move_response.status_code in [200, 201]:
+                                total_moved += 1
+                                break  # Success, move to next email
+                            else:
+                                print(f"DEBUG: Failed to move message {message_id}: {move_response.status_code}")
+                                if attempt < 2:  # Only retry if not last attempt
+                                    time.sleep(1)
+                                    continue
+                                break  # Failed all retries
+                        
+                        except (requests.exceptions.ConnectionError, 
+                                requests.exceptions.Timeout,
+                                requests.exceptions.RequestException) as e:
+                            if attempt < 2:  # Retry on network errors
+                                print(f"DEBUG: Network error moving message (attempt {attempt + 1}/3): {e}")
+                                time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s
+                                continue
+                            else:
+                                print(f"DEBUG: Failed to move message after 3 attempts: {e}")
+                                break
             
             print(f"DEBUG: Total moved: {total_moved} emails")
             
@@ -166,6 +242,7 @@ class EmailActions:
                 try:
                     rule_body = {
                         'displayName': f'Auto-move from {sender_email}',
+                        'sequence': 1,  # Required: rule priority (1 = highest)
                         'isEnabled': True,
                         'conditions': {
                             'fromAddresses': [
@@ -177,10 +254,11 @@ class EmailActions:
                         }
                     }
                     
-                    rule_response = requests.post(
+                    rule_response = session.post(
                         f"{graph_url}/mailFolders/inbox/messageRules",
                         headers=headers,
-                        json=rule_body
+                        json=rule_body,
+                        timeout=30
                     )
                     
                     if rule_response.status_code in [200, 201]:
@@ -188,7 +266,6 @@ class EmailActions:
                         print(f"DEBUG: Created rule for {sender_email}")
                     else:
                         print(f"DEBUG: Failed to create rule for {sender_email}: {rule_response.status_code}")
-                        print(f"DEBUG: Error response: {rule_response.text}")
                 
                 except Exception as e:
                     print(f"DEBUG: Error creating rule for {sender_email}: {e}")
