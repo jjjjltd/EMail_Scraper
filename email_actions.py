@@ -381,28 +381,258 @@ class EmailActions:
             'message': 'Clean-up History feature not yet implemented (Phase 2)',
             'emails_processed': 0
         }
-    
     @staticmethod
-    def archive_emails(mail, sender_email, archive_path, provider='google'):
+    def cleanup_history_microsoft(graph_token, sender_emails, keep_days, archive_days, delete_days, preview_only=False):
         """
-        Archive emails to zip file
+        Clean up email history using age-based policies (one-time action)
         
         Args:
-            mail: Active IMAP connection
-            sender_email: Email address of sender
-            archive_path: Path to save archive
-            provider: 'google' or 'microsoft'
+            graph_token: Graph API access token
+            sender_emails: List of sender email addresses
+            keep_days: Keep emails newer than this (e.g., 7)
+            archive_days: Not used - kept for API compatibility
+            delete_days: Delete emails older than this (e.g., 60)
+            preview_only: If True, only count emails, don't move/delete
+        
+        Logic:
+            - Emails < keep_days: Stay in inbox
+            - Emails keep_days to delete_days: Move to Archive
+            - Emails > delete_days: Move to Trash
         
         Returns:
-            dict: {'success': bool, 'message': str, 'emails_archived': int, 'archive_file': str}
+            dict: For preview: {'success': bool, 'preview': {'keep_count', 'archive_count', 'delete_count'}}
+                For execution: {'success': bool, 'message': str, 'executed': {'archived', 'deleted'}}
         """
-        # Placeholder for Phase 2
-        return {
-            'success': False,
-            'message': 'Archive feature not yet implemented (Phase 2)',
-            'emails_archived': 0,
-            'archive_file': None
-        }
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        from datetime import datetime, timedelta
+        import time
+        
+        # Configure session with retry logic
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=2,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "DELETE"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        
+        try:
+            # Support single sender
+            if isinstance(sender_emails, str):
+                sender_emails = [sender_emails]
+            
+            graph_url = "https://graph.microsoft.com/v1.0/me"
+            headers = {
+                'Authorization': f'Bearer {graph_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Calculate date thresholds (UTC)
+            now = datetime.utcnow()
+            keep_date = now - timedelta(days=int(keep_days))
+            delete_date = now - timedelta(days=int(delete_days))
+            
+            # Format for Graph API (ISO 8601)
+            keep_date_str = keep_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+            delete_date_str = delete_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+            
+            print(f"DEBUG: Cleanup thresholds - Keep: {keep_date_str}, Delete: {delete_date_str}")
+            
+            # Get or create Archive folder
+            archive_folder_id = None
+            if not preview_only:
+                # Check if Archive folder exists
+                folders_response = session.get(f"{graph_url}/mailFolders", headers=headers, timeout=30)
+                if folders_response.status_code == 200:
+                    folders = folders_response.json().get('value', [])
+                    for folder in folders:
+                        if folder['displayName'].lower() == 'archive':
+                            archive_folder_id = folder['id']
+                            print(f"DEBUG: Found existing Archive folder: {archive_folder_id}")
+                            break
+                    
+                    # Create Archive folder if doesn't exist
+                    if not archive_folder_id:
+                        create_response = session.post(
+                            f"{graph_url}/mailFolders",
+                            headers=headers,
+                            json={'displayName': 'Archive'},
+                            timeout=30
+                        )
+                        if create_response.status_code == 201:
+                            archive_folder_id = create_response.json()['id']
+                            print(f"DEBUG: Created Archive folder: {archive_folder_id}")
+            
+            # Get DeletedItems folder ID (use well-known name)
+            deleted_folder_id = 'deleteditems'
+            
+            # Counters
+            keep_count = 0
+            archive_count = 0
+            delete_count = 0
+            
+            actually_archived = 0
+            actually_deleted = 0
+            
+            # Process each sender
+            for sender_email in sender_emails:
+                print(f"DEBUG: Processing emails from {sender_email}")
+                
+                # Fetch emails from INBOX ONLY with pagination
+                search_url = f"{graph_url}/mailFolders/inbox/messages?$filter=from/emailAddress/address eq '{sender_email}'&$select=id,receivedDateTime&$top=999"
+                
+                all_messages = []
+                while search_url:
+                    messages_response = session.get(search_url, headers=headers, timeout=30)
+                    
+                    if messages_response.status_code != 200:
+                        print(f"DEBUG: Failed to fetch emails from {sender_email}: {messages_response.status_code}")
+                        break
+                    
+                    data = messages_response.json()
+                    messages = data.get('value', [])
+                    all_messages.extend(messages)
+                    
+                    # Check for next page
+                    search_url = data.get('@odata.nextLink')
+                
+                print(f"DEBUG: Found {len(all_messages)} inbox emails from {sender_email}")
+                
+                # Categorize and process emails by age
+                for message in all_messages:
+                    message_id = message['id']
+                    received_str = message['receivedDateTime']
+                    
+                    # Parse datetime (format: 2024-01-15T10:30:00Z)
+                    received_dt = datetime.strptime(received_str, '%Y-%m-%dT%H:%M:%SZ')
+                    
+                    # Determine action based on age
+                    # Logic: <keep_days (keep), keep_days to delete_days (archive), >delete_days (delete)
+                    
+                    if received_dt >= keep_date:
+                        # Newer than keep_days - keep in inbox
+                        keep_count += 1
+                    
+                    elif received_dt >= delete_date:
+                        # Between keep_days and delete_days - move to Archive
+                        archive_count += 1
+                        
+                        if not preview_only and archive_folder_id:
+                            # Actually move to Archive
+                            for attempt in range(3):
+                                try:
+                                    move_response = session.post(
+                                        f"{graph_url}/messages/{message_id}/move",
+                                        headers=headers,
+                                        json={'destinationId': archive_folder_id},
+                                        timeout=30
+                                    )
+                                    
+                                    if move_response.status_code in [200, 201]:
+                                        actually_archived += 1
+                                        break
+                                    elif attempt < 2:
+                                        time.sleep(1)
+                                except Exception as e:
+                                    if attempt < 2:
+                                        print(f"DEBUG: Network error on archive attempt {attempt + 1}: {e}")
+                                        time.sleep(2)
+                                    else:
+                                        print(f"DEBUG: Failed to archive {message_id} after 3 attempts: {e}")
+                                    break
+                    
+                    else:
+                        # Older than delete_days - move to Trash
+                        delete_count += 1
+                        
+                        if not preview_only:
+                            # Actually move to Deleted Items
+                            for attempt in range(3):
+                                try:
+                                    move_response = session.post(
+                                        f"{graph_url}/messages/{message_id}/move",
+                                        headers=headers,
+                                        json={'destinationId': deleted_folder_id},
+                                        timeout=30
+                                    )
+                                    
+                                    if move_response.status_code in [200, 201]:
+                                        actually_deleted += 1
+                                        break
+                                    elif attempt < 2:
+                                        time.sleep(1)
+                                except Exception as e:
+                                    if attempt < 2:
+                                        print(f"DEBUG: Network error on delete attempt {attempt + 1}: {e}")
+                                        time.sleep(2)
+                                    else:
+                                        print(f"DEBUG: Failed to delete {message_id} after 3 attempts: {e}")
+                                    break
+            
+            # Return results
+            if preview_only:
+                return {
+                    'success': True,
+                    'preview': {
+                        'keep_count': keep_count,
+                        'archive_count': archive_count,
+                        'delete_count': delete_count
+                    }
+                }
+            else:
+                return {
+                    'success': True,
+                    'message': f'Cleanup complete: Archived {actually_archived}, Deleted {actually_deleted} emails',
+                    'executed': {
+                        'archived': actually_archived,
+                        'deleted': actually_deleted
+                    }
+                }
+        
+        except Exception as e:
+            import traceback
+            print(f"DEBUG: cleanup_history_microsoft error: {e}")
+            print(traceback.format_exc())
+            
+            if preview_only:
+                return {
+                    'success': False,
+                    'message': f'Error: {str(e)}',
+                    'preview': {'keep_count': 0, 'archive_count': 0, 'delete_count': 0}
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f'Error: {str(e)}',
+                    'executed': {'archived': 0, 'deleted': 0}
+                }
+
+        @staticmethod
+        def archive_emails(mail, sender_email, archive_path, provider='google'):
+            """
+            Archive emails to zip file
+            
+            Args:
+                mail: Active IMAP connection
+                sender_email: Email address of sender
+                archive_path: Path to save archive
+                provider: 'google' or 'microsoft'
+            
+            Returns:
+                dict: {'success': bool, 'message': str, 'emails_archived': int, 'archive_file': str}
+            """
+            # Placeholder for Phase 2
+            return {
+                'success': False,
+                'message': 'Archive feature not yet implemented (Phase 2)',
+                'emails_archived': 0,
+                'archive_file': None
+            }
+        
     def create_gmail_filter(self, sender_email, label_id):
         """
         Create Gmail filter to auto-label future emails
