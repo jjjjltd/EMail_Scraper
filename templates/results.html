@@ -615,6 +615,17 @@
             })
                 .then(response => response.json())
                 .then(data => {
+                    // Check if we need Graph API authentication
+                    if (data.needs_graph_auth) {
+                        showHistoryProgress('🔑 Requesting additional permissions...');
+
+                        // Redirect to Graph API OAuth
+                        setTimeout(() => {
+                            window.location.href = data.redirect_url;
+                        }, 1000);
+                        return;
+                    }
+
                     if (data.success) {
                         const preview = data.preview;
                         showHistoryProgress(
@@ -684,6 +695,17 @@
             })
                 .then(response => response.json())
                 .then(data => {
+                    // Check if we need Graph API authentication
+                    if (data.needs_graph_auth) {
+                        showHistoryProgress('🔑 Requesting additional permissions...');
+
+                        // Redirect to Graph API OAuth
+                        setTimeout(() => {
+                            window.location.href = data.redirect_url;
+                        }, 1000);
+                        return;
+                    }
+
                     if (data.success) {
                         showHistoryProgress(
                             `✅ Success!\n` +
@@ -738,7 +760,7 @@
                     <p style="color: #666;">${senderList}</p>
                     
                     <div class="warning-box" style="background: #fff3cd; padding: 12px; border-radius: 4px; margin: 15px 0;">
-                        ⚠️ <strong>Warning:</strong> Emails will be moved to Trash. Gmail auto-deletes from Trash after 30 days.
+                        ⚠️ <strong>Warning:</strong> Emails will be moved to Trash. These are auto-deleted from Trash after 30 days.
                     </div>
                     
                     <div style="margin: 15px 0;">
