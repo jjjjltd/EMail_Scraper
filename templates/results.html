@@ -425,14 +425,14 @@
                     // Check if we need Graph API authentication
                     if (data.needs_graph_auth) {
                         showFolderProgress('🔑 Requesting additional permissions...');
-                        
+
                         // Redirect to Graph API OAuth
                         setTimeout(() => {
                             window.location.href = data.redirect_url;
                         }, 1000);
                         return;
                     }
-                    
+
                     if (data.success) {
                         const emailsMoved = data.emails_moved || 0;
                         const ruleCreated = data.rule_created ? '✅' : '⚠️';
@@ -542,7 +542,7 @@
                             </div>
                             
                             <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin-top: 1.5rem; border-radius: 6px;">
-                                <strong>⚠️ Warning:</strong> Delete moves emails to Trash. Gmail auto-deletes from Trash after 30 days.
+                                <strong>⚠️ Warning:</strong> Delete moves emails to Trash. These are auto-deleted from Trash after 30 days.
                             </div>
                         </div>
                         <div class="modal-footer">

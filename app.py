@@ -984,13 +984,47 @@ def action_clean_up_history():
             
             return jsonify(result)
         
-        # IMAP for Microsoft (future implementation)
+        elif provider == 'microsoft':
+            # Check for Graph API token
+            graph_token = session.get('graph_token')
+            
+            if not graph_token:
+                # Store pending action and redirect for Graph API auth
+                session['pending_action'] = {
+                    'type': 'cleanup_history',
+                    'sender_emails': sender_emails,
+                    'folder_name': folder_name,
+                    'keep_days': keep_days,
+                    'archive_days': archive_days,
+                    'delete_days': delete_days,
+                    'preview_only': preview_only
+                }
+                session.modified = True
+                
+                return jsonify({
+                    'success': False,
+                    'needs_graph_auth': True,
+                    'redirect_url': url_for('login_microsoft_graph'),
+                    'message': 'Redirecting for additional permissions...'
+                })
+            
+            # Use Graph API for cleanup
+            result = EmailActions.cleanup_history_microsoft(
+                graph_token,
+                sender_emails,
+                keep_days,
+                archive_days,
+                delete_days,
+                preview_only
+            )
+            
+            return jsonify(result)
+        
         else:
             return jsonify({
                 'success': False,
-                'message': 'Clean up History not yet implemented for Microsoft'
-            })
-        
+                'message': f'Unsupported provider: {provider}'
+            })        
     except Exception as e:
         import traceback
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
