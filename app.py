@@ -38,6 +38,9 @@ TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
 MAX_EMAILS = int(os.getenv('MAX_EMAILS', '5000'))
 MAX_TIME_SECONDS = int(os.getenv('MAX_TIME_SECONDS', '300'))
 
+# Microsoft Scopes:
+MICROSOFT_SCOPES = 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
+
 # Initialize OAuth
 oauth = OAuth(app)
 
@@ -122,7 +125,7 @@ microsoft = oauth.register(
     authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
     access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
     client_kwargs={
-        'scope': 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite',
+        'scope': MICROSOFT_SCOPES,
         'token_endpoint_auth_method': 'client_secret_post',
         'code_challenge_method': None
     }
@@ -518,7 +521,7 @@ def microsoft_callback():
     """Handle Microsoft OAuth callback"""
     try:
         # Get token
-        token = microsoft.authorize_access_token()
+        token = microsoft.authorize_access_token(scope = MICROSOFT_SCOPES)
         
         # Get user info
         resp = microsoft.get('https://graph.microsoft.com/v1.0/me')
@@ -536,9 +539,12 @@ def microsoft_callback():
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         print(f"Error in Microsoft OAuth: {e}")
+        print(error_details)  # This will show the full traceback
         return f"Authentication failed: {str(e)}", 400
-
+    
 @app.route('/results')
 def results():
     """Show analysis results"""
@@ -692,7 +698,7 @@ def action_clean_up_history():
 
 def open_browser():
     """Open browser after short delay"""
-    webbrowser.open('http://127.0.0.1:5000')
+    webbrowser.open('http://localhost:5000')
 
 
 @app.route('/api/storage-info', methods=['GET'])
@@ -779,8 +785,8 @@ if __name__ == '__main__':
     
     # Run Flask app
     print("🔍 Email Scraper starting...")
-    print("🌐 Opening browser at http://127.0.0.1:5000")
+    print("🌐 Opening browser at http://localhost:5000")
     if TEST_MODE:
         print("⚠️  TEST MODE: Read-only analysis")
     
-    app.run(debug=False, host='127.0.0.1', port=5000)
+    app.run(debug=False, host='localhost', port=5000)
