@@ -38,8 +38,71 @@ TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
 MAX_EMAILS = int(os.getenv('MAX_EMAILS', '5000'))
 MAX_TIME_SECONDS = int(os.getenv('MAX_TIME_SECONDS', '300'))
 
+# Microsoft Scopes:
+MICROSOFT_SCOPES = 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
+
 # Initialize OAuth
 oauth = OAuth(app)
+
+def execute_email_action(action_name, provider, access_token, **kwargs):
+    """
+    Execute an email action with provider-specific logic
+    
+    Args:
+        action_name: 'create_folder', 'delete_all', 'cleanup_history', etc.
+        provider: 'google' or 'microsoft'
+        access_token: OAuth token
+        **kwargs: Action-specific parameters
+    
+    Returns:
+        dict: Action result
+    """
+    if provider == 'google':
+        gmail = GmailAPI(access_token)
+        
+        if action_name == 'create_folder':
+            return gmail.create_folder(kwargs['sender_emails'], kwargs['folder_name'])
+        elif action_name == 'cleanup_history':
+            return gmail.Clean_up_history(
+                kwargs['sender_emails'],
+                kwargs['folder_name'],
+                kwargs['keep_days'],
+                kwargs['archive_days'],
+                kwargs['delete_days'],
+                kwargs['preview_only']
+            )
+        elif action_name == 'delete_all':
+            return gmail.delete_all(kwargs['sender_emails'], kwargs.get('create_filter', False))
+        elif action_name == 'archive':
+            return gmail.archive_emails(kwargs['sender_emails'], kwargs.get('create_filter', False))
+        else:
+            return {'success': False, 'message': f'Unknown action: {action_name}'}
+        
+    elif provider == 'microsoft':
+        if action_name == 'create_folder':
+            return EmailActions.create_folder_microsoft(
+                access_token,
+                kwargs['sender_emails'],
+                kwargs['folder_name']
+            )
+        elif action_name == 'cleanup_history':
+            return EmailActions.cleanup_history_microsoft(
+                access_token,
+                kwargs['sender_emails'],
+                kwargs['keep_days'],
+                kwargs['archive_days'],
+                kwargs['delete_days'],
+                kwargs['preview_only']
+            )
+        elif action_name == 'delete_all':
+            return {'success': False, 'message': 'Delete All for Microsoft coming soon'}
+        elif action_name == 'archive':
+            return {'success': False, 'message': 'Archive for Microsoft coming soon'}
+        else:
+            return {'success': False, 'message': f'Unknown action: {action_name}'}
+    
+    else:
+        return {'success': False, 'message': f'Unsupported provider: {provider}'}
 
 # Google OAuth configuration
 google = oauth.register(
@@ -54,7 +117,7 @@ google = oauth.register(
     }
 )
 
-# Microsoft OAuth configuration (IMAP - for analysis only)
+# Microsoft OAuth configuration (combined IMAP + Graph API scopes)
 microsoft = oauth.register(
     name='microsoft',
     client_id=os.getenv('MICROSOFT_CLIENT_ID'),
@@ -62,26 +125,11 @@ microsoft = oauth.register(
     authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
     access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
     client_kwargs={
-        'scope': 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read',
+        'scope': MICROSOFT_SCOPES,
         'token_endpoint_auth_method': 'client_secret_post',
         'code_challenge_method': None
     }
 )
-
-# Microsoft Graph API OAuth configuration (for actions - JWT tokens)
-microsoft_graph = oauth.register(
-    name='microsoft_graph',
-    client_id=os.getenv('MICROSOFT_CLIENT_ID'),
-    client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
-    authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-    access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
-    client_kwargs={
-        'scope': 'openid email profile offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite',
-        'token_endpoint_auth_method': 'client_secret_post',
-        'code_challenge_method': None
-    }
-)
-
 
 def decode_mime_words(s):
     """Decode MIME encoded email headers"""
@@ -416,409 +464,121 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
         
         return response
         
-    except imaplib.IMAP4.error as e:
-        import traceback
-        print(f"DEBUG: IMAP error details: {e}")
-        print(f"DEBUG: Traceback: {traceback.format_exc()}")
-        return {'error': f'IMAP error: {str(e)}'}
     except Exception as e:
         import traceback
-        print(f"DEBUG: Connection error details: {e}")
-        print(f"DEBUG: Traceback: {traceback.format_exc()}")
-        return {'error': f'Connection error: {str(e)}'}
+        print(f"Error analyzing emails: {e}")
+        print(traceback.format_exc())
+        return {'error': str(e)}
 
 @app.route('/')
 def index():
-    """Serve main page"""
     return render_template('index.html')
 
 @app.route('/login/<provider>')
 def login(provider):
-    """Initiate OAuth flow for provider"""
-    # Store days selection in session
+    """Initiate OAuth login for the selected provider"""
+    days = request.args.get('days', '7')
     
-    days = request.args.get('days', '1')
-    session.clear()
+    # Store days in session for later
     session['days'] = days
-    print(f"DEBUG: /login/{provider} - Days stored in session: {session['days']}")
     
     if provider == 'google':
         redirect_uri = url_for('google_callback', _external=True)
         return google.authorize_redirect(redirect_uri)
     elif provider == 'microsoft':
-        import secrets
-        import json
-        state_token  = secrets.token_urlsafe(32)
-        days = request.args.get('days', '1')
-        session['days'] = days
-           # Create state token with embedded data
-        state_token = secrets.token_urlsafe(32)
-        state_data = {
-            'token': state_token,
-            'days': days,
-            'created': datetime.now().isoformat()
-        }
-
-        # Store state in memory (not session)
-        if not hasattr(app, 'oauth_states'):
-            app.oauth_states = {}
-        app.oauth_states[state_token] = state_data
-        
-        # Build OAuth URL manually
-        auth_url = (
-            f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"
-            f"client_id={os.getenv('MICROSOFT_CLIENT_ID')}"
-            f"&response_type=code"
-            f"&redirect_uri=http://localhost:5000/oauth/microsoft/callback"
-            f"&scope=openid+email+profile+offline_access+https://outlook.office.com/IMAP.AccessAsUser.All+https://outlook.office.com/Mail.Read"
-            f"&state={state_token}"
-        )
-        
-        return redirect(auth_url)
+        redirect_uri = url_for('microsoft_callback', _external=True)
+        return microsoft.authorize_redirect(redirect_uri)
     else:
-        return jsonify({'error': 'Unknown provider'}), 400
+        return "Unknown provider", 400
 
 @app.route('/oauth/google/callback')
 def google_callback():
     """Handle Google OAuth callback"""
     try:
+        # Get token
         token = google.authorize_access_token()
-        user_info = google.get('https://www.googleapis.com/oauth2/v3/userinfo').json()
         
-        email_address = user_info.get('email')
-        access_token = token.get('access_token')
-        days = session.get('days', '1')
+        # Get user info
+        resp = google.get('https://www.googleapis.com/oauth2/v2/userinfo')
+        user_info = resp.json()
         
-        # Store in session for analysis
-        session['email'] = email_address
-        session['access_token'] = access_token
+        # Store in session
+        session['email'] = user_info['email']
         session['provider'] = 'google'
-        session['days'] = days
+        session['access_token'] = token['access_token']
         
-        return render_template('analyzing.html', email=email_address, days=days)
+        # Get days from session
+        days = session.get('days', '7')
+        
+        return render_template('analyzing.html', email=user_info['email'], days=days)
         
     except Exception as e:
-        return render_template('error.html', error=f'Authentication failed: {str(e)}')
+        print(f"Error in Google OAuth: {e}")
+        return f"Authentication failed: {str(e)}", 400
 
 @app.route('/oauth/microsoft/callback')
 def microsoft_callback():
     """Handle Microsoft OAuth callback"""
-    
-    code = request.args.get('code')
-    state_token = request.args.get('state')
-    
-    # Verify state from memory (our custom state for days)
-    if not hasattr(app, 'oauth_states') or state_token not in app.oauth_states:
-        return render_template('error.html', error='Invalid state - please try again')
-    
-    # Retrieve stored state data
-    state_data = app.oauth_states.get(state_token, {})
-    days = state_data.get('days', '1')
-    
-    # Clean up state
-    del app.oauth_states[state_token]
-    
     try:
-        # Exchange code for token manually (bypass authlib to avoid CSRF)
-        import requests
-        import jwt
+        # Get token
+        token = microsoft.authorize_access_token(scope = MICROSOFT_SCOPES)
         
-        token_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
-        token_data = {
-            'client_id': os.getenv('MICROSOFT_CLIENT_ID'),
-            'client_secret': os.getenv('MICROSOFT_CLIENT_SECRET'),
-            'code': code,
-            'redirect_uri': 'http://localhost:5000/oauth/microsoft/callback',
-            'grant_type': 'authorization_code',
-        }
+        # Get user info
+        resp = microsoft.get('https://graph.microsoft.com/v1.0/me')
+        user_info = resp.json()
         
-        token_response = requests.post(token_url, data=token_data)
-        token_response.raise_for_status()
-        token = token_response.json()
-        
-        # Get access token
-        access_token = token['access_token']
-        
-        # Get email from ID token
-        id_token = token.get('id_token')
-        if id_token:
-            decoded = jwt.decode(id_token, options={"verify_signature": False})
-            email_address = decoded.get('email') or decoded.get('preferred_username')
-        else:
-            email_address = None
-        
-        if not email_address:
-            return render_template('error.html', error='Could not get email address')
-        
-        # Store in session for analysis
+        # Store in session
+        email_address = user_info.get('mail') or user_info.get('userPrincipalName')
         session['email'] = email_address
-        session['access_token'] = access_token
         session['provider'] = 'microsoft'
-        session['days'] = days
-        session.modified = True
+        session['access_token'] = token['access_token']
+        
+        # Get days from session
+        days = session.get('days', '7')
         
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
         import traceback
-        print(f"DEBUG: microsoft_callback error: {e}")
-        print(traceback.format_exc())
-        return render_template('error.html', error=f'Authentication failed: {str(e)}')
-
-@app.route('/login/microsoft-graph')
-def login_microsoft_graph():
-    """Initiate Microsoft Graph API OAuth for actions (JWT tokens)"""
-    import secrets
+        error_details = traceback.format_exc()
+        print(f"Error in Microsoft OAuth: {e}")
+        print(error_details)  # This will show the full traceback
+        return f"Authentication failed: {str(e)}", 400
     
-    # Generate state token
-    state_token = secrets.token_urlsafe(32)
-    
-    # Store pending action if present in session
-    pending_action = session.get('pending_action')
-    
-    state_data = {
-        'token': state_token,
-        'created': datetime.now().isoformat(),
-        'pending_action': pending_action
-    }
-    
-    # Store state in memory
-    if not hasattr(app, 'graph_oauth_states'):
-        app.graph_oauth_states = {}
-    app.graph_oauth_states[state_token] = state_data
-    
-    # Build OAuth URL with Graph API scopes
-    auth_url = (
-        f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"
-        f"client_id={os.getenv('MICROSOFT_CLIENT_ID')}"
-        f"&response_type=code"
-        f"&redirect_uri=http://localhost:5000/oauth/microsoft-graph/callback"
-        f"&scope=openid+email+profile+offline_access+https://graph.microsoft.com/Mail.ReadWrite+https://graph.microsoft.com/MailboxSettings.ReadWrite"
-        f"&state={state_token}"
-    )
-    
-    return redirect(auth_url)
-
-@app.route('/oauth/microsoft-graph/callback')
-def microsoft_graph_callback():
-    """Handle Microsoft Graph API OAuth callback"""
-    
-    code = request.args.get('code')
-    state_token = request.args.get('state')
-    
-    # Verify state
-    if not hasattr(app, 'graph_oauth_states') or state_token not in app.graph_oauth_states:
-        return render_template('error.html', error='Invalid state - please try again')
-    
-    # Retrieve stored state data
-    state_data = app.graph_oauth_states.get(state_token, {})
-    pending_action = state_data.get('pending_action')
-    
-    # Clean up state
-    del app.graph_oauth_states[state_token]
-    
-    try:
-        import requests
-        
-        # Exchange code for Graph API token (JWT)
-        token_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
-        token_data = {
-            'client_id': os.getenv('MICROSOFT_CLIENT_ID'),
-            'client_secret': os.getenv('MICROSOFT_CLIENT_SECRET'),
-            'code': code,
-            'redirect_uri': 'http://localhost:5000/oauth/microsoft-graph/callback',
-            'grant_type': 'authorization_code',
-            'scope': 'https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
-        }
-        
-        token_response = requests.post(token_url, data=token_data)
-        token_response.raise_for_status()
-        token = token_response.json()
-        
-        # Get Graph API access token (JWT)
-        graph_token = token['access_token']
-        
-        # Debug token format
-        print(f"DEBUG Graph: token type: {type(graph_token)}")
-        print(f"DEBUG Graph: token first 50 chars: {graph_token[:50]}")
-        print(f"DEBUG Graph: Contains dots (JWT)? {('.' in graph_token)}")
-        
-        # Store Graph API token in session
-        session['graph_token'] = graph_token
-        session.modified = True
-        
-        # If there's a pending action, redirect to execute it
-        if pending_action:
-            action_type = pending_action.get('type')
-            
-            if action_type == 'create_folder':
-                # Store action back in session for execution
-                session['pending_action'] = pending_action
-                session.modified = True
-                # Frontend will detect this and call the action API
-                return render_template('graph_auth_success.html')
-            # Add more action types here as needed
-        
-        # No pending action, just return to results
-        return redirect(url_for('results'))
-        
-    except Exception as e:
-        import traceback
-        print(f"DEBUG: microsoft_graph_callback error: {e}")
-        print(traceback.format_exc())
-        return render_template('error.html', error=f'Graph API authentication failed: {str(e)}')
-
-@app.route('/execute-pending-action')
-def execute_pending_action():
-    """Execute the pending action stored in session after Graph OAuth"""
-    pending_action = session.get('pending_action')
-    
-    if not pending_action:
-        return redirect(url_for('results'))
-    
-    action_type = pending_action.get('type')
-    
-    if action_type == 'create_folder':
-        # Render a page that will POST to the create-folder endpoint
-        return render_template('execute_create_folder.html',
-                             sender_emails=pending_action.get('sender_emails'),
-                             folder_name=pending_action.get('folder_name'))
-    
-    # Default: redirect to results
-    return redirect(url_for('results'))
-
-
 @app.route('/results')
 def results():
-    """Display analysis results"""
-    # print(f"DEBUG: Full session at /results start: {dict(session)}")
+    """Show analysis results"""
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
-    days = session.get('days', '94')
-    # print(f"DEBUG FINAL: /results using days={days}")
+    days = session.get('days', '7')
     
     if not email_address or not access_token:
         return redirect(url_for('index'))
     
     # Perform analysis
-    result = analyze_emails_oauth(email_address, access_token, provider, days)
+    analysis_result = analyze_emails_oauth(email_address, access_token, provider, days)
     
-    if result.get('error'):
-        return render_template('error.html', error=result['error'])
+    if 'error' in analysis_result:
+        return render_template('error.html', error=analysis_result['error'])
     
-    # Generate user-friendly period label
-    if days == 'first':
-        period_label = "First Day Ever"
-    elif days == '1' or days == 1:
-        period_label = "Last 1 Day"
-    elif days == '7' or days == 7:
-        period_label = "Last 7 Days"
-    else:
-        period_label = f"Last {days} Days"
+    # Get enabled actions for template
+    enabled_actions = get_enabled_actions()
     
-    # Render results using the results template
     return render_template('results.html', 
-                         total_emails=result['total_emails'],
-                         total_senders=len(result['senders']),
-                         days_analyzed=result['days_analyzed'],
-                         period_label=period_label,
-                         senders=result['senders'],
-                         warning=result.get('warning'),
-                         test_mode=result.get('test_mode', False),
-                         features=FEATURES)
-
-@app.route('/action/count-emails', methods=['POST'])
-def action_count_emails():
-    """Count total emails from selected senders (all time, no date filter)"""
-    
-    # Check if feature is enabled
-    if not is_action_enabled('create_folder'):
-        return jsonify({'success': False, 'message': 'Feature not enabled'})
-    
-    # Get session data
-    email_address = session.get('email')
-    access_token = session.get('access_token')
-    provider = session.get('provider')
-    
-    if not email_address or not access_token:
-        return jsonify({'success': False, 'message': 'Not authenticated'})
-    
-    # Get request data
-    data = request.get_json()
-    sender_emails = data.get('sender_emails', [])
-    
-    if not sender_emails:
-        return jsonify({'success': False, 'message': 'No senders provided'})
-        
-    try:
-        # Use Gmail API for Google (faster and more reliable)
-        if provider == 'google':
-            
-            gmail = GmailAPI(access_token)
-            total_emails = 0
-            
-            for sender_email in sender_emails:
-                message_ids = gmail.search_messages(sender_email)
-                total_emails += len(message_ids)
-            
-            return jsonify({
-                'success': True,
-                'total_emails': total_emails,
-                'sender_count': len(sender_emails)
-            })
-        
-        # Use IMAP for Microsoft and other providers
-        # Determine IMAP server
-        if provider == 'microsoft':
-            imap_server = 'imap-mail.outlook.com'
-        else:
-            return jsonify({'success': False, 'message': 'Unknown provider'})
-        
-        # Connect to IMAP
-        mail = imaplib.IMAP4_SSL(imap_server)
-        
-        # Authenticate
-        auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
-        
-        def get_auth(challenge):
-            return auth_string.encode('utf-8')
-        
-        mail.authenticate('XOAUTH2', get_auth)
-        mail.select('INBOX', readonly=True)
-        
-        # Count emails from all senders
-        total_emails = 0
-        for sender_email in sender_emails:
-            search_criteria = f'(FROM "{sender_email}")'
-            status, messages = mail.search(None, search_criteria)
-            
-            if status == 'OK' and messages[0]:
-                email_ids = messages[0].split()
-                count = len(email_ids)
-                total_emails += count
- 
-        # Close connection
-        mail.close()
-        mail.logout()
-                
-        return jsonify({
-            'success': True,
-            'total_emails': total_emails,
-            'sender_count': len(sender_emails)
-        })
-        
-    except Exception as e:
-        import traceback
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+                         email=email_address,
+                         provider=provider,
+                         days=days,
+                         total_emails=analysis_result.get('total_emails', 0),
+                         senders=analysis_result.get('senders', []),
+                         warning=analysis_result.get('warning'),
+                         test_mode=TEST_MODE,
+                         enabled_actions=enabled_actions)
 
 @app.route('/action/create-folder', methods=['POST'])
 def action_create_folder():
     """Handle Create Folder action"""
     
-    # DEBUG: Check what token we have
-    access_token = session.get('access_token')
-
     # Check if feature is enabled
     if not is_action_enabled('create_folder'):
         return jsonify({'success': False, 'message': 'Create Folder feature is not enabled'})
@@ -846,79 +606,27 @@ def action_create_folder():
         return jsonify({'success': False, 'message': 'Missing sender_emails or folder_name'})
     
     try:
-        # Route to provider-specific implementation
-        if provider == 'google':
-            result = EmailActions.create_folder_gmail(access_token, sender_emails, folder_name)
-            
-            filters_created = result.get('filters_created', 0)
-
-            if filters_created > 0:
-                rule_result = {
-                    'success': True,
-                    'message': f'Created {filters_created} automatic filter(s) - future emails will go straight to {folder_name}',
-                    'manual_instructions': None
-                }
-            else:
-                rule_result = {
-                    'success': False,
-                    'message': 'Filters could not be created automatically',
-                    'manual_instructions': f'Optional: Create filter FROM {", ".join(sender_emails)} → Move to {folder_name}'
-                }
-
-            return jsonify({
-                'success': result['success'],
-                'message': result['message'],
-                'emails_moved': result.get('emails_moved', 0),
-                'failed_count': result.get('failed_count', 0),
-                'folder_created': result.get('folder_created'),
-                'rule_created': filters_created > 0,
-                'rule_message': f'Created {filters_created} filter(s)' if filters_created > 0 else 'No filters created',
-                'filters_created': filters_created
-            })
+        # Use helper function for both providers
+        result = execute_email_action(
+            'create_folder',
+            provider,
+            access_token,
+            sender_emails=sender_emails,
+            folder_name=folder_name
+        )
         
-        elif provider == 'microsoft':
-            # Check for Graph API token (JWT)
-            graph_token = session.get('graph_token')
-            
-            if not graph_token:
-                # Store pending action and redirect to get Graph API token
-                session['pending_action'] = {
-                    'type': 'create_folder',
-                    'sender_emails': sender_emails,
-                    'folder_name': folder_name
-                }
-                session.modified = True
-                
-                # Return redirect instruction to frontend
-                return jsonify({
-                    'success': False,
-                    'needs_graph_auth': True,
-                    'redirect_url': url_for('login_microsoft_graph'),
-                    'message': 'Redirecting for additional permissions...'
-                })
-            
-            # Use Graph API token for action
-            print(f"DEBUG: Using graph_token for create_folder_microsoft")
-            print(f"DEBUG: graph_token first 50: {graph_token[:50]}")
-            print(f"DEBUG: graph_token has dots (JWT)? {('.' in graph_token)}")
-            
-            result = EmailActions.create_folder_microsoft(graph_token, sender_emails, folder_name)
-            
-            filters_created = result.get('filters_created', 0)
-            
-            return jsonify({
-                'success': result['success'],
-                'message': result['message'],
-                'emails_moved': result.get('emails_moved', 0),
-                'failed_count': result.get('failed_count', 0),
-                'folder_created': result.get('folder_created'),
-                'rule_created': filters_created > 0,
-                'rule_message': f'Created {filters_created} rule(s)' if filters_created > 0 else 'No rules created',
-                'filters_created': filters_created
-            })
+        filters_created = result.get('filters_created', 0)
         
-        else:
-            return jsonify({'success': False, 'message': f'Unsupported provider: {provider}'})
+        return jsonify({
+            'success': result['success'],
+            'message': result['message'],
+            'emails_moved': result.get('emails_moved', 0),
+            'failed_count': result.get('failed_count', 0),
+            'folder_created': result.get('folder_created'),
+            'rule_created': filters_created > 0,
+            'rule_message': f'Created {filters_created} filter(s)/rule(s)' if filters_created > 0 else 'No filters/rules created',
+            'filters_created': filters_created
+        })
     
     except Exception as e:
         import traceback
@@ -969,69 +677,28 @@ def action_clean_up_history():
         return jsonify({'success': False, 'message': 'Invalid date periods: keep < archive <= delete'})
         
     try:
-        # Use Gmail API for Google
-        if provider == 'google':
-            
-            gmail = GmailAPI(access_token)
-            result = gmail.Clean_up_history(
-                sender_emails,
-                folder_name,
-                keep_days,
-                archive_days,
-                delete_days,
-                preview_only
-            )
-            
-            return jsonify(result)
+        # Use helper function for both providers
+        result = execute_email_action(
+            'cleanup_history',
+            provider,
+            access_token,
+            sender_emails=sender_emails,
+            folder_name=folder_name,
+            keep_days=keep_days,
+            archive_days=archive_days,
+            delete_days=delete_days,
+            preview_only=preview_only
+        )
         
-        elif provider == 'microsoft':
-            # Check for Graph API token
-            graph_token = session.get('graph_token')
-            
-            if not graph_token:
-                # Store pending action and redirect for Graph API auth
-                session['pending_action'] = {
-                    'type': 'cleanup_history',
-                    'sender_emails': sender_emails,
-                    'folder_name': folder_name,
-                    'keep_days': keep_days,
-                    'archive_days': archive_days,
-                    'delete_days': delete_days,
-                    'preview_only': preview_only
-                }
-                session.modified = True
-                
-                return jsonify({
-                    'success': False,
-                    'needs_graph_auth': True,
-                    'redirect_url': url_for('login_microsoft_graph'),
-                    'message': 'Redirecting for additional permissions...'
-                })
-            
-            # Use Graph API for cleanup
-            result = EmailActions.cleanup_history_microsoft(
-                graph_token,
-                sender_emails,
-                keep_days,
-                archive_days,
-                delete_days,
-                preview_only
-            )
-            
-            return jsonify(result)
+        return jsonify(result)
         
-        else:
-            return jsonify({
-                'success': False,
-                'message': f'Unsupported provider: {provider}'
-            })        
     except Exception as e:
         import traceback
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 def open_browser():
     """Open browser after short delay"""
-    webbrowser.open('http://127.0.0.1:5000')
+    webbrowser.open('http://localhost:5000')
 
 
 @app.route('/api/storage-info', methods=['GET'])
@@ -1072,15 +739,18 @@ def delete_all():
         return jsonify({'error': 'No senders selected'}), 400
     
     provider = session.get('provider')
+    access_token = session.get('access_token')
     
-    if provider == 'google':
-        gmail = GmailAPI(session['access_token'])
-        result = gmail.delete_all(sender_emails, create_filter)
-        return jsonify(result)
-    elif provider == 'microsoft':
-        # TODO: Implement IMAP delete_all in email_actions.py
-        # For now, return not implemented
-        return jsonify({'error': 'Delete All for Microsoft coming soon'}), 501
+    # Use helper function
+    result = execute_email_action(
+        'delete_all',
+        provider,
+        access_token,
+        sender_emails=sender_emails,
+        create_filter=create_filter
+    )
+    
+    return jsonify(result)
 
 @app.route('/action/archive', methods=['POST'])
 def archive():
@@ -1096,16 +766,18 @@ def archive():
         return jsonify({'error': 'No senders selected'}), 400
     
     provider = session.get('provider')
+    access_token = session.get('access_token')
     
-    if provider == 'google':
-        gmail = GmailAPI(session['access_token'])
-        result = gmail.archive_emails(sender_emails, create_filter)
-        return jsonify(result)
-    elif provider == 'microsoft':
-        # TODO: Implement IMAP archive
-        return jsonify({'error': 'Archive for Microsoft coming soon'}), 501
-    else:
-        return jsonify({'error': 'Unsupported provider'}), 400
+    # Use helper function
+    result = execute_email_action(
+        'archive',
+        provider,
+        access_token,
+        sender_emails=sender_emails,
+        create_filter=create_filter
+    )
+    
+    return jsonify(result)
 
 if __name__ == '__main__':
     # Open browser after 1 second
@@ -1113,9 +785,8 @@ if __name__ == '__main__':
     
     # Run Flask app
     print("🔍 Email Scraper starting...")
-    print("🌐 Opening browser at http://127.0.0.1:5000")
+    print("🌐 Opening browser at http://localhost:5000")
     if TEST_MODE:
         print("⚠️  TEST MODE: Read-only analysis")
     
-    app.run(debug=False, host='127.0.0.1', port=5000)
-
+    app.run(debug=False, host='localhost', port=5000)
