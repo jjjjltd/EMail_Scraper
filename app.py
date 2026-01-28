@@ -6,7 +6,6 @@ OAuth 2.0 implementation for frictionless authentication
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
-import imaplib
 import email
 from email.header import decode_header
 from datetime import datetime, timedelta
@@ -38,11 +37,11 @@ TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
 MAX_EMAILS = int(os.getenv('MAX_EMAILS', '5000'))
 MAX_TIME_SECONDS = int(os.getenv('MAX_TIME_SECONDS', '300'))
 
-# Microsoft Scopes:
-MICROSOFT_SCOPES = 'openid email profile offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
-
 # Initialize OAuth
 oauth = OAuth(app)
+
+# Microsoft Scopes (Graph API only - no IMAP)
+MICROSOFT_SCOPES = 'openid email profile offline_access https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
 
 def execute_email_action(action_name, provider, access_token, **kwargs):
     """
@@ -117,13 +116,14 @@ google = oauth.register(
     }
 )
 
-# Microsoft OAuth configuration (combined IMAP + Graph API scopes)
+# Microsoft OAuth configuration (Graph API only)
 microsoft = oauth.register(
     name='microsoft',
     client_id=os.getenv('MICROSOFT_CLIENT_ID'),
     client_secret=os.getenv('MICROSOFT_CLIENT_SECRET'),
     authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
     access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    jwks_uri='https://login.microsoftonline.com/common/discovery/v2.0/keys',
     client_kwargs={
         'scope': MICROSOFT_SCOPES,
         'token_endpoint_auth_method': 'client_secret_post',
@@ -176,40 +176,19 @@ def get_organization(email_addr):
     except:
         return "Unknown"
 
-def check_unsubscribe(email_msg):
-    """Check if email contains unsubscribe link"""
-    # Check headers first
-    if email_msg.get('List-Unsubscribe'):
-        return True
-    
-    # Check body for unsubscribe links
-    try:
-        if email_msg.is_multipart():
-            for part in email_msg.walk():
-                content_type = part.get_content_type()
-                if content_type in ['text/plain', 'text/html']:
-                    try:
-                        body = part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                        if re.search(r'unsubscribe', body, re.IGNORECASE):
-                            return True
-                    except:
-                        pass
-        else:
-            body = email_msg.get_payload(decode=True)
-            if body:
-                body_str = body.decode('utf-8', errors='ignore')
-                if re.search(r'unsubscribe', body_str, re.IGNORECASE):
-                    return True
-    except:
-        pass
-    
+def check_unsubscribe_header(headers):
+    """Check if email has unsubscribe link in headers"""
+    # Check for List-Unsubscribe header
+    for header in headers:
+        if header.get('name', '').lower() == 'list-unsubscribe':
+            return True
     return False
 
 def analyze_emails_oauth(email_address, access_token, provider, days):
-    """Analyze emails using Gmail API (Google) or IMAP (Microsoft)"""
+    """Analyze emails using Gmail API (Google) or Graph API (Microsoft)"""
     
     try:
-        # Use Gmail API for Google (more reliable than IMAP)
+        # Use Gmail API for Google
         if provider == 'google':
             
             # Initialize Gmail API
@@ -281,58 +260,28 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
                     print(f"DEBUG: Error processing message {msg.get('id')}: {e}")
                     continue
         
-        # Use IMAP for Microsoft
+        # Use Graph API for Microsoft
         elif provider == 'microsoft':
-            print(f"DEBUG: Using IMAP for Microsoft analysis, {days} days")
+            print(f"DEBUG: Using Graph API for Microsoft analysis, {days} days")
             
-            imap_server = 'imap-mail.outlook.com'
+            import requests
             
-            # Connect to IMAP server
-            mail = imaplib.IMAP4_SSL(imap_server)
+            graph_url = "https://graph.microsoft.com/v1.0/me"
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
             
-            # Authenticate with OAuth
-            auth_string = f'user={email_address}\x01auth=Bearer {access_token}\x01\x01'
-            
-            def get_auth(challenge):
-                return auth_string.encode('utf-8')
-            
-            mail.authenticate('XOAUTH2', get_auth)
-            
-            # Select inbox
-            mail.select('INBOX')
-            
-            # Handle "first day" option
+            # Calculate date range
             if days == 'first':
-                # Get ALL emails, take oldest 100
-                status, messages = mail.search(None, 'ALL')
-                if status != 'OK':
-                    return {'error': 'Failed to search emails'}
-                email_ids = messages[0].split()
-                if email_ids:
-                    email_ids = email_ids[:100]  # First 100 emails ever
-                total_emails = len(email_ids)
+                # Get oldest 100 emails
+                messages_url = f"{graph_url}/mailFolders/inbox/messages?$top=100&$orderby=receivedDateTime asc&$select=id,from,subject,receivedDateTime,isRead,hasAttachments,internetMessageHeaders"
                 days_display = "first day"
             else:
-                # Calculate date range
                 days_int = int(days)
-                since_date = (datetime.now() - timedelta(days=days_int)).strftime("%d-%b-%Y")
-                
-                # Search for emails in date range
-                status, messages = mail.search(None, f'SINCE {since_date}')
-                
-                if status != 'OK':
-                    return {'error': 'Failed to search emails'}
-                
-                email_ids = messages[0].split()
-                total_emails = len(email_ids)
+                since_date = (datetime.utcnow() - timedelta(days=days_int)).strftime('%Y-%m-%dT%H:%M:%SZ')
+                messages_url = f"{graph_url}/mailFolders/inbox/messages?$filter=receivedDateTime ge {since_date}&$top=999&$select=id,from,subject,receivedDateTime,isRead,hasAttachments,internetMessageHeaders"
                 days_display = days_int
-            
-            # Apply limit
-            if total_emails > MAX_EMAILS:
-                email_ids = email_ids[-MAX_EMAILS:]  # Get most recent
-                limited = True
-            else:
-                limited = False
             
             # Track senders
             sender_data = defaultdict(lambda: {
@@ -347,46 +296,63 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
                 'has_unsubscribe': False
             })
             
-            # Process emails
+            # Fetch messages with pagination
+            all_messages = []
             start_time = datetime.now()
             
-            for idx, email_id in enumerate(email_ids):
+            while messages_url:
                 # Check timeout
                 if (datetime.now() - start_time).seconds > MAX_TIME_SECONDS:
                     break
                     
+                response = requests.get(messages_url, headers=headers, timeout=30)
+                
+                if response.status_code != 200:
+                    print(f"DEBUG: Graph API error: {response.status_code}")
+                    print(f"DEBUG: Response: {response.text}")
+                    return {'error': f'Graph API error: {response.status_code}'}
+                
+                data = response.json()
+                messages = data.get('value', [])
+                all_messages.extend(messages)
+                
+                # Check for next page
+                messages_url = data.get('@odata.nextLink')
+                
+                # Apply limit
+                if len(all_messages) >= MAX_EMAILS:
+                    all_messages = all_messages[:MAX_EMAILS]
+                    break
+            
+            total_emails = len(all_messages)
+            limited = len(all_messages) >= MAX_EMAILS
+            
+            # Process messages
+            for msg in all_messages:
                 try:
-                    # Use BODY.PEEK[] to avoid marking as read
-                    status, msg_data = mail.fetch(email_id, '(BODY.PEEK[] FLAGS)')
-                    
-                    if status != 'OK':
-                        continue
-                    
-                    # Parse email
-                    raw_email = msg_data[0][1]
-                    email_msg = email.message_from_bytes(raw_email)
-                    
-                    # Get flags
-                    flags = msg_data[0][0].decode()
-                    is_read = '\\Seen' in flags
-                    
                     # Extract sender info
-                    from_header = decode_mime_words(email_msg.get('From', ''))
-                    sender_name, sender_email = extract_sender_info(from_header)
+                    from_data = msg.get('from', {}).get('emailAddress', {})
+                    sender_email = from_data.get('address', 'unknown@unknown.com')
+                    sender_name = from_data.get('name', sender_email.split('@')[0])
                     organization = get_organization(sender_email)
                     
                     # Get date
-                    date_header = email_msg.get('Date', '')
+                    received_str = msg.get('receivedDateTime', '')
                     try:
-                        email_date = email.utils.parsedate_to_datetime(date_header)
+                        email_date = datetime.strptime(received_str, '%Y-%m-%dT%H:%M:%SZ')
                     except:
-                        email_date = datetime.now()
+                        email_date = datetime.utcnow()
                     
-                    # Get size (approximate)
-                    email_size = len(raw_email)
+                    # Check read status
+                    is_read = msg.get('isRead', False)
                     
                     # Check for unsubscribe
-                    has_unsubscribe = check_unsubscribe(email_msg)
+                    headers = msg.get('internetMessageHeaders', [])
+                    has_unsubscribe = check_unsubscribe_header(headers)
+                    
+                    # Estimate size (Graph API doesn't provide size in list view)
+                    # Rough estimate: 5KB per email
+                    email_size = 5 * 1024
                     
                     # Update sender data
                     key = sender_email.lower()
@@ -409,12 +375,8 @@ def analyze_emails_oauth(email_address, access_token, provider, days):
                         data['has_unsubscribe'] = True
                     
                 except Exception as e:
-                    print(f"Error processing email {email_id}: {e}")
+                    print(f"DEBUG: Error processing message: {e}")
                     continue
-            
-            # Close IMAP connection
-            mail.close()
-            mail.logout()
         
         else:
             return {'error': 'Unknown provider'}
@@ -521,7 +483,7 @@ def microsoft_callback():
     """Handle Microsoft OAuth callback"""
     try:
         # Get token
-        token = microsoft.authorize_access_token(scope = MICROSOFT_SCOPES)
+        token = microsoft.authorize_access_token()
         
         # Get user info
         resp = microsoft.get('https://graph.microsoft.com/v1.0/me')
@@ -542,9 +504,9 @@ def microsoft_callback():
         import traceback
         error_details = traceback.format_exc()
         print(f"Error in Microsoft OAuth: {e}")
-        print(error_details)  # This will show the full traceback
+        print(error_details)
         return f"Authentication failed: {str(e)}", 400
-    
+
 @app.route('/results')
 def results():
     """Show analysis results"""
