@@ -41,8 +41,7 @@ MAX_TIME_SECONDS = int(os.getenv('MAX_TIME_SECONDS', '300'))
 oauth = OAuth(app)
 
 # Microsoft Scopes (Graph API only - no IMAP)
-MICROSOFT_SCOPES = 'openid email profile offline_access https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
-
+MICROSOFT_SCOPES = 'openid email profile offline_access https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/MailboxSettings.ReadWrite'
 def execute_email_action(action_name, provider, access_token, **kwargs):
     """
     Execute an email action with provider-specific logic
@@ -487,8 +486,12 @@ def microsoft_callback():
         
         # Get user info
         resp = microsoft.get('https://graph.microsoft.com/v1.0/me')
+        print(f"DEBUG callback: Response status: {resp.status_code}")
+        print(f"DEBUG callback: Response text: {resp.text}")
         user_info = resp.json()
-        
+        print(f"DEBUG callback: Full user_info dict: {user_info}")
+        print(f"DEBUG callback: User info: {user_info.get('mail') or user_info.get('userPrincipalName')}")
+
         # Store in session
         email_address = user_info.get('mail') or user_info.get('userPrincipalName')
         session['email'] = email_address
@@ -497,7 +500,9 @@ def microsoft_callback():
         
         # Get days from session
         days = session.get('days', '7')
+        print(f"DEBUG callback: Session stored - email={session.get('email')}, provider={session.get('provider')}")
         
+        print(f"DEBUG callback: Days={days}")
         return render_template('analyzing.html', email=email_address, days=days)
         
     except Exception as e:
@@ -513,7 +518,11 @@ def results():
     email_address = session.get('email')
     access_token = session.get('access_token')
     provider = session.get('provider')
+
     days = session.get('days', '7')
+
+    print(f"DEBUG /results: email={email_address}, provider={provider}, days={days}")
+    print(f"DEBUG /results: has token={bool(access_token)}")
     
     if not email_address or not access_token:
         return redirect(url_for('index'))
@@ -535,7 +544,8 @@ def results():
                          senders=analysis_result.get('senders', []),
                          warning=analysis_result.get('warning'),
                          test_mode=TEST_MODE,
-                         enabled_actions=enabled_actions)
+                         enabled_actions=enabled_actions,
+                         features=FEATURES)
 
 @app.route('/action/create-folder', methods=['POST'])
 def action_create_folder():
