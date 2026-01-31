@@ -92,10 +92,12 @@ def execute_email_action(action_name, provider, access_token, **kwargs):
                 kwargs['delete_days'],
                 kwargs['preview_only']
             )
+
         elif action_name == 'delete_all':
-            return {'success': False, 'message': 'Delete All for Microsoft coming soon'}
+            return EmailActions.delete_all_microsoft(access_token, kwargs['sender_emails'])
         elif action_name == 'archive':
-            return {'success': False, 'message': 'Archive for Microsoft coming soon'}
+            return EmailActions.archive_microsoft(access_token, kwargs['sender_emails'])
+
         else:
             return {'success': False, 'message': f'Unknown action: {action_name}'}
     

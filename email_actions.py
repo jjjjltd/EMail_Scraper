@@ -657,3 +657,247 @@ class EmailActions:
         ).execute()
         
         return created_filter
+    @staticmethod
+    def delete_all_microsoft(access_token, sender_emails):
+        """
+        Delete all emails from specified senders (move to Trash)
+        
+        Args:
+            access_token: Graph API access token
+            sender_emails: List of sender email addresses
+        
+        Returns:
+            dict: {'success': bool, 'message': str, 'deleted': int}
+        """
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        import time
+        
+        # Configure session with retry logic
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=2,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        
+        try:
+            # Support single sender
+            if isinstance(sender_emails, str):
+                sender_emails = [sender_emails]
+            
+            graph_url = "https://graph.microsoft.com/v1.0/me"
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            deleted_count = 0
+            
+            # Process each sender
+            for sender_email in sender_emails:
+                print(f"DEBUG: Deleting all emails from {sender_email}")
+                
+                # Fetch ALL emails from this sender with pagination
+                search_url = f"{graph_url}/mailFolders/inbox/messages?$filter=from/emailAddress/address eq '{sender_email}'&$select=id&$top=999"
+                
+                all_messages = []
+                while search_url:
+                    messages_response = session.get(search_url, headers=headers, timeout=30)
+                    
+                    if messages_response.status_code != 200:
+                        print(f"DEBUG: Failed to fetch emails from {sender_email}: {messages_response.status_code}")
+                        break
+                    
+                    data = messages_response.json()
+                    messages = data.get('value', [])
+                    all_messages.extend(messages)
+                    
+                    # Check for next page
+                    search_url = data.get('@odata.nextLink')
+                
+                print(f"DEBUG: Found {len(all_messages)} emails to delete from {sender_email}")
+                
+                # Delete each email (move to Trash)
+                for message in all_messages:
+                    message_id = message['id']
+                    
+                    for attempt in range(3):
+                        try:
+                            # Move to Deleted Items folder
+                            move_response = session.post(
+                                f"{graph_url}/messages/{message_id}/move",
+                                headers=headers,
+                                json={'destinationId': 'deleteditems'},
+                                timeout=30
+                            )
+                            
+                            if move_response.status_code in [200, 201]:
+                                deleted_count += 1
+                                break
+                            elif attempt < 2:
+                                time.sleep(1)
+                        except Exception as e:
+                            if attempt < 2:
+                                print(f"DEBUG: Network error on delete attempt {attempt + 1}: {e}")
+                                time.sleep(2)
+                            else:
+                                print(f"DEBUG: Failed to delete {message_id} after 3 attempts: {e}")
+                            break
+            
+            return {
+                'success': True,
+                'message': f'Deleted {deleted_count} emails to Trash (recoverable for 30 days)',
+                'deleted': deleted_count
+            }
+            
+        except Exception as e:
+            import traceback
+            print(f"DEBUG: delete_all_microsoft error: {e}")
+            print(traceback.format_exc())
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'deleted': 0
+            }
+    @staticmethod
+    def archive_microsoft(access_token, sender_emails):
+        """
+        Archive all emails from specified senders (move to Archive folder)
+        
+        Args:
+            access_token: Graph API access token
+            sender_emails: List of sender email addresses
+        
+        Returns:
+            dict: {'success': bool, 'message': str, 'archived': int}
+        """
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        import time
+        
+        # Configure session with retry logic
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=2,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        
+        try:
+            # Support single sender
+            if isinstance(sender_emails, str):
+                sender_emails = [sender_emails]
+            
+            graph_url = "https://graph.microsoft.com/v1.0/me"
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Get or create Archive folder
+            archive_folder_id = None
+            folders_response = session.get(f"{graph_url}/mailFolders", headers=headers, timeout=30)
+            if folders_response.status_code == 200:
+                folders = folders_response.json().get('value', [])
+                for folder in folders:
+                    if folder['displayName'].lower() == 'archive':
+                        archive_folder_id = folder['id']
+                        print(f"DEBUG: Found existing Archive folder: {archive_folder_id}")
+                        break
+                
+                # Create Archive folder if doesn't exist
+                if not archive_folder_id:
+                    create_response = session.post(
+                        f"{graph_url}/mailFolders",
+                        headers=headers,
+                        json={'displayName': 'Archive'},
+                        timeout=30
+                    )
+                    if create_response.status_code == 201:
+                        archive_folder_id = create_response.json()['id']
+                        print(f"DEBUG: Created Archive folder: {archive_folder_id}")
+            
+            if not archive_folder_id:
+                return {
+                    'success': False,
+                    'message': 'Could not create or find Archive folder',
+                    'archived': 0
+                }
+            
+            archived_count = 0
+            
+            # Process each sender
+            for sender_email in sender_emails:
+                print(f"DEBUG: Archiving all emails from {sender_email}")
+                
+                # Fetch ALL emails from this sender with pagination
+                search_url = f"{graph_url}/mailFolders/inbox/messages?$filter=from/emailAddress/address eq '{sender_email}'&$select=id&$top=999"
+                
+                all_messages = []
+                while search_url:
+                    messages_response = session.get(search_url, headers=headers, timeout=30)
+                    
+                    if messages_response.status_code != 200:
+                        print(f"DEBUG: Failed to fetch emails from {sender_email}: {messages_response.status_code}")
+                        break
+                    
+                    data = messages_response.json()
+                    messages = data.get('value', [])
+                    all_messages.extend(messages)
+                    
+                    # Check for next page
+                    search_url = data.get('@odata.nextLink')
+                
+                print(f"DEBUG: Found {len(all_messages)} emails to archive from {sender_email}")
+                
+                # Archive each email
+                for message in all_messages:
+                    message_id = message['id']
+                    
+                    for attempt in range(3):
+                        try:
+                            # Move to Archive folder
+                            move_response = session.post(
+                                f"{graph_url}/messages/{message_id}/move",
+                                headers=headers,
+                                json={'destinationId': archive_folder_id},
+                                timeout=30
+                            )
+                            
+                            if move_response.status_code in [200, 201]:
+                                archived_count += 1
+                                break
+                            elif attempt < 2:
+                                time.sleep(1)
+                        except Exception as e:
+                            if attempt < 2:
+                                print(f"DEBUG: Network error on archive attempt {attempt + 1}: {e}")
+                                time.sleep(2)
+                            else:
+                                print(f"DEBUG: Failed to archive {message_id} after 3 attempts: {e}")
+                            break
+            
+            return {
+                'success': True,
+                'message': f'Archived {archived_count} emails to Archive folder',
+                'archived': archived_count
+            }
+            
+        except Exception as e:
+            import traceback
+            print(f"DEBUG: archive_microsoft error: {e}")
+            print(traceback.format_exc())
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'archived': 0
+            }
