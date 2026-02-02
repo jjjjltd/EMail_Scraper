@@ -658,16 +658,17 @@ class EmailActions:
         
         return created_filter
     @staticmethod
-    def delete_all_microsoft(access_token, sender_emails):
+    def delete_all_microsoft(access_token, sender_emails, create_filter=False):
         """
         Delete all emails from specified senders (move to Trash)
         
         Args:
             access_token: Graph API access token
             sender_emails: List of sender email addresses
+            create_filter: If True, create rule to auto-delete future emails
         
         Returns:
-            dict: {'success': bool, 'message': str, 'deleted': int}
+            dict: {'success': bool, 'message': str, 'deleted': int, 'rules_created': int}
         """
         import requests
         from requests.adapters import HTTPAdapter
@@ -749,10 +750,65 @@ class EmailActions:
                                 print(f"DEBUG: Failed to delete {message_id} after 3 attempts: {e}")
                             break
             
+            # Create inbox rules if requested
+            rules_created = 0
+            if create_filter:
+                print(f"DEBUG: Creating auto-delete rules for {len(sender_emails)} sender(s)")
+                
+                for sender_email in sender_emails:
+                    rule_data = {
+                        "displayName": f"Auto-delete from {sender_email}",
+                        "sequence": 1,
+                        "isEnabled": True,
+                        "conditions": {
+                            "fromAddresses": [
+                                {
+                                    "emailAddress": {
+                                        "address": sender_email
+                                    }
+                                }
+                            ]
+                        },
+                        "actions": {
+                            "delete": True
+                        }
+                    }
+                    
+                    for attempt in range(3):
+                        try:
+                            rule_response = session.post(
+                                f"{graph_url}/mailFolders/inbox/messageRules",
+                                headers=headers,
+                                json=rule_data,
+                                timeout=30
+                            )
+                            
+                            if rule_response.status_code == 201:
+                                rules_created += 1
+                                print(f"DEBUG: Created auto-delete rule for {sender_email}")
+                                break
+                            elif attempt < 2:
+                                print(f"DEBUG: Rule creation attempt {attempt + 1} failed: {rule_response.status_code}")
+                                time.sleep(1)
+                            else:
+                                print(f"DEBUG: Failed to create rule for {sender_email}: {rule_response.text}")
+                        except Exception as e:
+                            if attempt < 2:
+                                print(f"DEBUG: Network error creating rule attempt {attempt + 1}: {e}")
+                                time.sleep(2)
+                            else:
+                                print(f"DEBUG: Failed to create rule for {sender_email}: {e}")
+                            break
+            
+            message = f'Deleted {deleted_count} emails to Trash (recoverable for 30 days)'
+            if create_filter and rules_created > 0:
+                message += f'. Created {rules_created} auto-delete rule(s) for future emails'
+            
             return {
                 'success': True,
-                'message': f'Deleted {deleted_count} emails to Trash (recoverable for 30 days)',
-                'deleted': deleted_count
+                'message': message,
+                'deleted': deleted_count,
+                'rules_created': rules_created
             }
             
         except Exception as e:
@@ -762,19 +818,22 @@ class EmailActions:
             return {
                 'success': False,
                 'message': f'Error: {str(e)}',
-                'deleted': 0
+                'deleted': 0,
+                'rules_created': 0
             }
+
     @staticmethod
-    def archive_microsoft(access_token, sender_emails):
+    def archive_microsoft(access_token, sender_emails, create_filter=False):
         """
         Archive all emails from specified senders (move to Archive folder)
         
         Args:
             access_token: Graph API access token
             sender_emails: List of sender email addresses
+            create_filter: If True, create rule to auto-archive future emails
         
         Returns:
-            dict: {'success': bool, 'message': str, 'archived': int}
+            dict: {'success': bool, 'message': str, 'archived': int, 'rules_created': int}
         """
         import requests
         from requests.adapters import HTTPAdapter
@@ -830,7 +889,8 @@ class EmailActions:
                 return {
                     'success': False,
                     'message': 'Could not create or find Archive folder',
-                    'archived': 0
+                    'archived': 0,
+                    'rules_created': 0
                 }
             
             archived_count = 0
@@ -886,10 +946,65 @@ class EmailActions:
                                 print(f"DEBUG: Failed to archive {message_id} after 3 attempts: {e}")
                             break
             
+            # Create inbox rules if requested
+            rules_created = 0
+            if create_filter:
+                print(f"DEBUG: Creating auto-archive rules for {len(sender_emails)} sender(s)")
+                
+                for sender_email in sender_emails:
+                    rule_data = {
+                        "displayName": f"Auto-archive from {sender_email}",
+                        "sequence": 1,
+                        "isEnabled": True,
+                        "conditions": {
+                            "fromAddresses": [
+                                {
+                                    "emailAddress": {
+                                        "address": sender_email
+                                    }
+                                }
+                            ]
+                        },
+                        "actions": {
+                            "moveToFolder": archive_folder_id
+                        }
+                    }
+                    
+                    for attempt in range(3):
+                        try:
+                            rule_response = session.post(
+                                f"{graph_url}/mailFolders/inbox/messageRules",
+                                headers=headers,
+                                json=rule_data,
+                                timeout=30
+                            )
+                            
+                            if rule_response.status_code == 201:
+                                rules_created += 1
+                                print(f"DEBUG: Created auto-archive rule for {sender_email}")
+                                break
+                            elif attempt < 2:
+                                print(f"DEBUG: Rule creation attempt {attempt + 1} failed: {rule_response.status_code}")
+                                time.sleep(1)
+                            else:
+                                print(f"DEBUG: Failed to create rule for {sender_email}: {rule_response.text}")
+                        except Exception as e:
+                            if attempt < 2:
+                                print(f"DEBUG: Network error creating rule attempt {attempt + 1}: {e}")
+                                time.sleep(2)
+                            else:
+                                print(f"DEBUG: Failed to create rule for {sender_email}: {e}")
+                            break
+            
+            message = f'Archived {archived_count} emails to Archive folder'
+            if create_filter and rules_created > 0:
+                message += f'. Created {rules_created} auto-archive rule(s) for future emails'
+            
             return {
                 'success': True,
-                'message': f'Archived {archived_count} emails to Archive folder',
-                'archived': archived_count
+                'message': message,
+                'archived': archived_count,
+                'rules_created': rules_created
             }
             
         except Exception as e:
@@ -899,5 +1014,141 @@ class EmailActions:
             return {
                 'success': False,
                 'message': f'Error: {str(e)}',
-                'archived': 0
+                'archived': 0,
+                'rules_created': 0
             }
+            """
+            Archive all emails from specified senders (move to Archive folder)
+            
+            Args:
+                access_token: Graph API access token
+                sender_emails: List of sender email addresses
+            
+            Returns:
+                dict: {'success': bool, 'message': str, 'archived': int}
+            """
+            import requests
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            import time
+            
+            # Configure session with retry logic
+            session = requests.Session()
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=2,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["GET", "POST"]
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            session.mount("https://", adapter)
+            
+            try:
+                # Support single sender
+                if isinstance(sender_emails, str):
+                    sender_emails = [sender_emails]
+                
+                graph_url = "https://graph.microsoft.com/v1.0/me"
+                headers = {
+                    'Authorization': f'Bearer {access_token}',
+                    'Content-Type': 'application/json'
+                }
+                
+                # Get or create Archive folder
+                archive_folder_id = None
+                folders_response = session.get(f"{graph_url}/mailFolders", headers=headers, timeout=30)
+                if folders_response.status_code == 200:
+                    folders = folders_response.json().get('value', [])
+                    for folder in folders:
+                        if folder['displayName'].lower() == 'archive':
+                            archive_folder_id = folder['id']
+                            print(f"DEBUG: Found existing Archive folder: {archive_folder_id}")
+                            break
+                    
+                    # Create Archive folder if doesn't exist
+                    if not archive_folder_id:
+                        create_response = session.post(
+                            f"{graph_url}/mailFolders",
+                            headers=headers,
+                            json={'displayName': 'Archive'},
+                            timeout=30
+                        )
+                        if create_response.status_code == 201:
+                            archive_folder_id = create_response.json()['id']
+                            print(f"DEBUG: Created Archive folder: {archive_folder_id}")
+                
+                if not archive_folder_id:
+                    return {
+                        'success': False,
+                        'message': 'Could not create or find Archive folder',
+                        'archived': 0
+                    }
+                
+                archived_count = 0
+                
+                # Process each sender
+                for sender_email in sender_emails:
+                    print(f"DEBUG: Archiving all emails from {sender_email}")
+                    
+                    # Fetch ALL emails from this sender with pagination
+                    search_url = f"{graph_url}/mailFolders/inbox/messages?$filter=from/emailAddress/address eq '{sender_email}'&$select=id&$top=999"
+                    
+                    all_messages = []
+                    while search_url:
+                        messages_response = session.get(search_url, headers=headers, timeout=30)
+                        
+                        if messages_response.status_code != 200:
+                            print(f"DEBUG: Failed to fetch emails from {sender_email}: {messages_response.status_code}")
+                            break
+                        
+                        data = messages_response.json()
+                        messages = data.get('value', [])
+                        all_messages.extend(messages)
+                        
+                        # Check for next page
+                        search_url = data.get('@odata.nextLink')
+                    
+                    print(f"DEBUG: Found {len(all_messages)} emails to archive from {sender_email}")
+                    
+                    # Archive each email
+                    for message in all_messages:
+                        message_id = message['id']
+                        
+                        for attempt in range(3):
+                            try:
+                                # Move to Archive folder
+                                move_response = session.post(
+                                    f"{graph_url}/messages/{message_id}/move",
+                                    headers=headers,
+                                    json={'destinationId': archive_folder_id},
+                                    timeout=30
+                                )
+                                
+                                if move_response.status_code in [200, 201]:
+                                    archived_count += 1
+                                    break
+                                elif attempt < 2:
+                                    time.sleep(1)
+                            except Exception as e:
+                                if attempt < 2:
+                                    print(f"DEBUG: Network error on archive attempt {attempt + 1}: {e}")
+                                    time.sleep(2)
+                                else:
+                                    print(f"DEBUG: Failed to archive {message_id} after 3 attempts: {e}")
+                                break
+                
+                return {
+                    'success': True,
+                    'message': f'Archived {archived_count} emails to Archive folder',
+                    'archived': archived_count
+                }
+                
+            except Exception as e:
+                import traceback
+                print(f"DEBUG: archive_microsoft error: {e}")
+                print(traceback.format_exc())
+                return {
+                    'success': False,
+                    'message': f'Error: {str(e)}',
+                    'archived': 0
+                }
