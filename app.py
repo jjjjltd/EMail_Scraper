@@ -94,9 +94,17 @@ def execute_email_action(action_name, provider, access_token, **kwargs):
             )
 
         elif action_name == 'delete_all':
-            return EmailActions.delete_all_microsoft(access_token, kwargs['sender_emails'])
+            return EmailActions.delete_all_microsoft(
+                access_token, 
+                kwargs['sender_emails'],
+                kwargs.get('create_filter', False)
+            )
         elif action_name == 'archive':
-            return EmailActions.archive_microsoft(access_token, kwargs['sender_emails'])
+            return EmailActions.archive_microsoft(
+                access_token, 
+                kwargs['sender_emails'],
+                kwargs.get('create_filter', False)
+            )
 
         else:
             return {'success': False, 'message': f'Unknown action: {action_name}'}
