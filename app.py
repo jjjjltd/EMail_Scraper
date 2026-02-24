@@ -121,7 +121,7 @@ google = oauth.register(
     client_kwargs={
         'scope': 'openid email profile https://mail.google.com/ https://www.googleapis.com/auth/gmail.settings.basic',
         'access_type': 'offline',
-        'prompt': 'consent'
+        'prompt': 'consent select_account'
     }
 )
 
@@ -136,7 +136,8 @@ microsoft = oauth.register(
     client_kwargs={
         'scope': MICROSOFT_SCOPES,
         'token_endpoint_auth_method': 'client_secret_post',
-        'code_challenge_method': None
+        'code_challenge_method': None,
+        'prompt': 'select_account' 
     }
 )
 
